@@ -2,9 +2,12 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { BookOpen } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
 
 export default function LoginPage() {
   const supabase = createClient()
+  const searchParams = useSearchParams()
+  const error = searchParams.get('error')
 
   async function loginWithGoogle() {
     await supabase.auth.signInWithOAuth({
@@ -40,6 +43,12 @@ export default function LoginPage() {
           </svg>
           Entrar com Google
         </button>
+
+        {error && (
+          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-700">
+            {error}
+          </p>
+        )}
 
         <p className="text-center text-xs text-muted-foreground">
           Acesso restrito ao proprietário da conta
