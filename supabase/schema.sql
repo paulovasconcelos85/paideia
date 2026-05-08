@@ -51,6 +51,53 @@ create table public.citacoes (
   created_at timestamptz default now()
 );
 
+-- Planos mensais
+create table public.planos_mensais (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  numero_mes integer not null,
+  ano integer not null,
+  mes integer not null check (mes between 1 and 12),
+  titulo text not null,
+  objetivo text,
+  observacoes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (user_id, numero_mes)
+);
+
+-- Livros vinculados a cada mês do plano
+create table public.plano_livros (
+  id uuid default gen_random_uuid() primary key,
+  plano_id uuid references public.planos_mensais(id) on delete cascade not null,
+  livro_id uuid references public.livros(id) on delete cascade not null,
+  papel text not null default 'principal',
+  ordem integer not null default 0,
+  observacoes text,
+  created_at timestamptz default now(),
+  unique (plano_id, livro_id)
+);
+
+-- Caderno de pensamentos
+create table public.pensamentos (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  conteudo text not null,
+  tags text[],
+  livro_id uuid references public.livros(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table public.prosas (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  titulo text not null default 'Prosa gerada',
+  conteudo text not null,
+  fontes jsonb,
+  created_at timestamptz default now()
+);
+
 -- ============================================================
 -- RLS (Row Level Security)
 -- ============================================================
@@ -59,6 +106,10 @@ alter table public.profiles enable row level security;
 alter table public.livros enable row level security;
 alter table public.citacoes enable row level security;
 alter table public.eixos enable row level security;
+alter table public.planos_mensais enable row level security;
+alter table public.plano_livros enable row level security;
+alter table public.pensamentos enable row level security;
+alter table public.prosas enable row level security;
 
 -- Profiles: cada user vê só o próprio
 create policy "profiles_own" on public.profiles
@@ -76,6 +127,53 @@ create policy "livros_own" on public.livros
 create policy "citacoes_own" on public.citacoes
   for all using (auth.uid() = user_id);
 
+-- Planos mensais: CRUD próprio
+create policy "planos_mensais_own" on public.planos_mensais
+  for all using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- Plano livros: CRUD dos vínculos pertencentes a planos próprios
+create policy "plano_livros_own" on public.plano_livros
+  for all using (
+    exists (
+      select 1
+      from public.planos_mensais p
+      where p.id = plano_livros.plano_id
+        and p.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.planos_mensais p
+      where p.id = plano_livros.plano_id
+        and p.user_id = auth.uid()
+    )
+  );
+
+-- Caderno: CRUD próprio
+create policy "pensamentos_select" on public.pensamentos
+  for select using (auth.uid() = user_id);
+
+create policy "pensamentos_insert" on public.pensamentos
+  for insert with check (auth.uid() = user_id);
+
+create policy "pensamentos_update" on public.pensamentos
+  for update using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "pensamentos_delete" on public.pensamentos
+  for delete using (auth.uid() = user_id);
+
+create policy "prosas_select" on public.prosas
+  for select using (auth.uid() = user_id);
+
+create policy "prosas_insert" on public.prosas
+  for insert with check (auth.uid() = user_id);
+
+create policy "prosas_delete" on public.prosas
+  for delete using (auth.uid() = user_id);
+
 -- ============================================================
 -- Trigger: atualiza updated_at em livros
 -- ============================================================
@@ -90,6 +188,14 @@ $$;
 
 create trigger livros_updated_at
   before update on public.livros
+  for each row execute function public.set_updated_at();
+
+create trigger planos_mensais_updated_at
+  before update on public.planos_mensais
+  for each row execute function public.set_updated_at();
+
+create trigger pensamentos_updated_at
+  before update on public.pensamentos
   for each row execute function public.set_updated_at();
 
 -- Trigger: cria profile automaticamente ao criar user

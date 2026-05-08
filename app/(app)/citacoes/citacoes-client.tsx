@@ -104,7 +104,7 @@ export default function CitacoesClient({ citacoes: initial, livros }: Props) {
                   value={form.texto}
                   onChange={e => setForm(p => ({ ...p, texto: e.target.value }))}
                   placeholder="Digite a citação..."
-                  className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                  className="min-h-32 w-full resize rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
 
