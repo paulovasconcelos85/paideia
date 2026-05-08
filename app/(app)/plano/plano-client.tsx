@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState, useTransition, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { BookOpen, Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { BookOpen, Check, ChevronDown, ChevronUp, Plus, Search, Trash2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { STATUS_CONFIG } from '@/lib/utils'
 import type { Status } from '@/lib/types'
@@ -76,14 +76,50 @@ interface Plano {
   plano_livros: PlanoLivro[]
 }
 
-export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
+interface LivroSimples {
+  id: string
+  titulo: string
+  autor: string | null
+}
+
+interface Props {
+  userId: string
+  planos: Plano[]
+  livrosBiblioteca: LivroSimples[]
+}
+
+function normalizePlanoLivro(data: unknown): PlanoLivro {
+  const item = data as PlanoLivro & { livros?: (PlanoLivro['livros'] & { eixos?: { nome: string; cor: string }[] | { nome: string; cor: string } | null }) | null }
+  const livro = item.livros
+
+  return {
+    ...item,
+    livros: livro
+      ? {
+          ...livro,
+          eixos: Array.isArray(livro.eixos) ? livro.eixos[0] ?? null : livro.eixos ?? null,
+        }
+      : null,
+  }
+}
+
+export default function PlanoClient({ userId, planos: initial, livrosBiblioteca }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
   const [planos, setPlanos] = useState(initial)
   const [expandido, setExpandido] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
+  const [criandoMes, setCriandoMes] = useState(false)
   const mesAtualRef = useRef<HTMLDivElement>(null)
+
+  const [modalPlanoId, setModalPlanoId] = useState<string | null>(null)
+  const [busca, setBusca] = useState('')
+  const [novoTitulo, setNovoTitulo] = useState('')
+  const [novoAutor, setNovoAutor] = useState('')
+  const [novoPapel, setNovoPapel] = useState('literatura')
+  const [adicionando, setAdicionando] = useState(false)
+  const [modoNovo, setModoNovo] = useState(false)
 
   const hoje = new Date()
   const mesAtual = hoje.getMonth() + 1
@@ -103,10 +139,6 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
     return plano.ano === anoAtual && plano.mes === mesAtual
   }
 
-  function isFuturo(plano: Plano) {
-    return plano.ano > anoAtual || (plano.ano === anoAtual && plano.mes > mesAtual)
-  }
-
   function isPast(plano: Plano) {
     return plano.ano < anoAtual || (plano.ano === anoAtual && plano.mes < mesAtual)
   }
@@ -115,11 +147,58 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
     const livros = plano.plano_livros.filter(planoLivro => planoLivro.livros)
     if (!livros.length) return 0
 
-    const lidos = livros.filter(planoLivro =>
-      planoLivro.livros?.status === 'lido' || planoLivro.livros?.status === 'reler'
-    ).length
+    return Math.round(
+      (livros.filter(planoLivro =>
+        planoLivro.livros?.status === 'lido' || planoLivro.livros?.status === 'reler'
+      ).length / livros.length) * 100
+    )
+  }
 
-    return Math.round((lidos / livros.length) * 100)
+  const proximoMes = useMemo(() => {
+    if (!planos.length) return { ano: anoAtual, mes: mesAtual, numero_mes: 1 }
+
+    const ultimo = planos[planos.length - 1]
+    const proximoMesNumero = ultimo.mes === 12 ? 1 : ultimo.mes + 1
+    const proximoAno = ultimo.mes === 12 ? ultimo.ano + 1 : ultimo.ano
+
+    return { ano: proximoAno, mes: proximoMesNumero, numero_mes: ultimo.numero_mes + 1 }
+  }, [anoAtual, mesAtual, planos])
+
+  const livrosFiltrados = useMemo(() => {
+    if (!busca.trim()) return livrosBiblioteca.slice(0, 8)
+
+    const query = busca.toLowerCase()
+    return livrosBiblioteca
+      .filter(livro =>
+        livro.titulo.toLowerCase().includes(query) || (livro.autor ?? '').toLowerCase().includes(query)
+      )
+      .slice(0, 8)
+  }, [busca, livrosBiblioteca])
+
+  const planoAtualModal = planos.find(plano => plano.id === modalPlanoId)
+
+  async function criarProximoMes() {
+    setCriandoMes(true)
+    const { ano, mes, numero_mes } = proximoMes
+    const titulo = `Mês ${numero_mes} — ${MESES_PT[mes - 1]} ${ano}`
+
+    const { data, error } = await supabase
+      .from('planos_mensais')
+      .insert({ user_id: userId, numero_mes, ano, mes, titulo, objetivo: '' })
+      .select('*, plano_livros(*)')
+      .single()
+
+    setCriandoMes(false)
+
+    if (!error && data) {
+      const novo = { ...data, plano_livros: [] } as Plano
+      setPlanos(prev => [...prev, novo])
+      setExpandido(novo.id)
+      startTransition(() => router.refresh())
+      window.setTimeout(() => {
+        document.getElementById(`mes-${novo.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 200)
+    }
   }
 
   async function toggleStatus(planoLivro: PlanoLivro) {
@@ -155,6 +234,90 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
     }
   }
 
+  async function removerLivroDoMes(planoLivroId: string, planoId: string) {
+    const { error } = await supabase.from('plano_livros').delete().eq('id', planoLivroId)
+    if (!error) {
+      setPlanos(prev =>
+        prev.map(plano =>
+          plano.id === planoId
+            ? { ...plano, plano_livros: plano.plano_livros.filter(item => item.id !== planoLivroId) }
+            : plano
+        )
+      )
+    }
+  }
+
+  async function adicionarLivroExistente(planoId: string, livro: LivroSimples) {
+    setAdicionando(true)
+    const plano = planos.find(item => item.id === planoId)
+    const ordem = (plano?.plano_livros.length ?? 0) + 1
+
+    const { data, error } = await supabase
+      .from('plano_livros')
+      .insert({ plano_id: planoId, livro_id: livro.id, papel: novoPapel, ordem })
+      .select('id, papel, ordem, observacoes, livros(id, titulo, autor, status, nota, eixos(nome, cor))')
+      .single()
+
+    setAdicionando(false)
+
+    if (!error && data) {
+      const novoItem = normalizePlanoLivro(data)
+      setPlanos(prev =>
+        prev.map(item =>
+          item.id === planoId ? { ...item, plano_livros: [...item.plano_livros, novoItem] } : item
+        )
+      )
+      setBusca('')
+      setModalPlanoId(null)
+      startTransition(() => router.refresh())
+    }
+  }
+
+  async function adicionarLivroNovo(planoId: string) {
+    if (!novoTitulo.trim()) return
+
+    setAdicionando(true)
+    const { data: livro, error: errLivro } = await supabase
+      .from('livros')
+      .insert({
+        user_id: userId,
+        titulo: novoTitulo.trim(),
+        autor: novoAutor.trim() || null,
+        status: 'comprar',
+      })
+      .select('id, titulo, autor, status, nota, eixos(nome, cor)')
+      .single()
+
+    if (errLivro || !livro) {
+      setAdicionando(false)
+      return
+    }
+
+    const plano = planos.find(item => item.id === planoId)
+    const ordem = (plano?.plano_livros.length ?? 0) + 1
+    const { data, error } = await supabase
+      .from('plano_livros')
+      .insert({ plano_id: planoId, livro_id: livro.id, papel: novoPapel, ordem })
+      .select('id, papel, ordem, observacoes, livros(id, titulo, autor, status, nota, eixos(nome, cor))')
+      .single()
+
+    setAdicionando(false)
+
+    if (!error && data) {
+      const novoItem = normalizePlanoLivro(data)
+      setPlanos(prev =>
+        prev.map(item =>
+          item.id === planoId ? { ...item, plano_livros: [...item.plano_livros, novoItem] } : item
+        )
+      )
+      setNovoTitulo('')
+      setNovoAutor('')
+      setModoNovo(false)
+      setModalPlanoId(null)
+      startTransition(() => router.refresh())
+    }
+  }
+
   async function salvarObsMes(planoId: string, observacoes: string) {
     const { error } = await supabase
       .from('planos_mensais')
@@ -174,12 +337,17 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Plano de Leitura</h1>
-        <p className="mt-1 text-sm text-muted-foreground">24 meses · 3 livros por mês</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {planos.length} meses · sem limite de livros por mês
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
-          { label: 'Meses concluídos', value: planos.filter(plano => calcProgresso(plano) === 100).length },
+          {
+            label: 'Meses concluídos',
+            value: planos.filter(plano => calcProgresso(plano) === 100 && plano.plano_livros.length > 0).length,
+          },
           {
             label: 'Em andamento',
             value: planos.filter(plano => calcProgresso(plano) > 0 && calcProgresso(plano) < 100).length,
@@ -203,7 +371,6 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
         {planos.map(plano => {
           const atual = isAtual(plano)
           const passado = isPast(plano)
-          const futuro = isFuturo(plano)
           const aberto = expandido === plano.id
           const progresso = calcProgresso(plano)
           const livrosOrdenados = [...plano.plano_livros].sort((a, b) => a.ordem - b.ordem)
@@ -211,10 +378,11 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
           return (
             <div
               key={plano.id}
+              id={`mes-${plano.id}`}
               ref={atual ? mesAtualRef : undefined}
               className={`rounded-xl border bg-card transition-all ${
-                atual ? 'border-primary/50 shadow-sm ring-1 ring-primary/20' : 'border-border'
-              } ${futuro ? 'opacity-90' : ''}`}
+                atual ? 'border-primary/50 ring-1 ring-primary/20' : 'border-border'
+              }`}
             >
               <button
                 type="button"
@@ -225,14 +393,13 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
                   className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
                     atual
                       ? 'bg-primary text-primary-foreground'
-                      : passado && progresso === 100
+                      : passado && progresso === 100 && plano.plano_livros.length > 0
                         ? 'bg-green-500 text-white'
                         : 'bg-secondary text-muted-foreground'
                   }`}
                 >
-                  {passado && progresso === 100 ? '✓' : plano.numero_mes}
+                  {passado && progresso === 100 && plano.plano_livros.length > 0 ? '✓' : plano.numero_mes}
                 </div>
-
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">
@@ -243,12 +410,14 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
                         Mês atual
                       </span>
                     )}
+                    <span className="text-xs text-muted-foreground">
+                      {livrosOrdenados.length} livro{livrosOrdenados.length !== 1 ? 's' : ''}
+                    </span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {plano.objetivo ?? plano.titulo}
-                  </p>
+                  {plano.objetivo && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{plano.objetivo}</p>
+                  )}
                 </div>
-
                 <div className="flex flex-shrink-0 items-center gap-3">
                   <div className="hidden items-center gap-2 sm:flex">
                     <div className="h-1.5 w-20 overflow-hidden rounded-full bg-secondary">
@@ -272,6 +441,11 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
               {aberto && (
                 <div className="space-y-4 border-t border-border px-5 pb-5 pt-4">
                   <div className="space-y-2">
+                    {livrosOrdenados.length === 0 && (
+                      <p className="py-4 text-center text-sm text-muted-foreground">
+                        Nenhum livro neste mês ainda.
+                      </p>
+                    )}
                     {livrosOrdenados.map(planoLivro => {
                       if (!planoLivro.livros) return null
 
@@ -281,7 +455,7 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
                       return (
                         <div
                           key={planoLivro.id}
-                          className={`flex items-start gap-3 rounded-lg p-3 transition-colors ${
+                          className={`group flex items-start gap-3 rounded-lg p-3 transition-colors ${
                             lido ? 'bg-green-50' : 'bg-secondary/30'
                           }`}
                         >
@@ -302,7 +476,6 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
                               <Check className="h-3 w-3" />
                             ) : null}
                           </button>
-
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <span
@@ -323,30 +496,40 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
                             {planoLivro.livros.autor && (
                               <p className="mt-0.5 text-xs text-muted-foreground">{planoLivro.livros.autor}</p>
                             )}
-                            {planoLivro.livros.eixos && (
-                              <span
-                                className="mt-1 inline-block rounded px-1.5 py-0.5 text-xs"
-                                style={{
-                                  backgroundColor: `${planoLivro.livros.eixos.cor}20`,
-                                  color: planoLivro.livros.eixos.cor,
-                                }}
-                              >
-                                {planoLivro.livros.eixos.nome}
-                              </span>
-                            )}
                           </div>
-
-                          <span
-                            className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs ${
-                              STATUS_CONFIG[planoLivro.livros.status]?.className ?? ''
-                            }`}
-                          >
-                            {STATUS_CONFIG[planoLivro.livros.status]?.label ?? planoLivro.livros.status}
-                          </span>
+                          <div className="flex items-center gap-1">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs ${
+                                STATUS_CONFIG[planoLivro.livros.status]?.className ?? ''
+                              }`}
+                            >
+                              {STATUS_CONFIG[planoLivro.livros.status]?.label}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removerLivroDoMes(planoLivro.id, plano.id)}
+                              className="p-1 text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
+                              aria-label="Remover livro do mês"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                       )
                     })}
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalPlanoId(plano.id)
+                      setBusca('')
+                      setModoNovo(false)
+                    }}
+                    className="flex items-center gap-2 text-sm text-primary transition-colors hover:text-primary/80"
+                  >
+                    <Plus className="h-4 w-4" /> Adicionar livro
+                  </button>
 
                   <div className="space-y-1.5">
                     <label className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -362,7 +545,147 @@ export default function PlanoClient({ planos: initial }: { planos: Plano[] }) {
             </div>
           )
         })}
+
+        <button
+          type="button"
+          onClick={criarProximoMes}
+          disabled={criandoMes}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border py-4 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" />
+          {criandoMes
+            ? 'Criando...'
+            : `Criar ${MESES_PT[proximoMes.mes - 1]} ${proximoMes.ano} (Mês ${proximoMes.numero_mes})`}
+        </button>
       </div>
+
+      {modalPlanoId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={event => {
+            if (event.target === event.currentTarget) setModalPlanoId(null)
+          }}
+        >
+          <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-background p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Adicionar livro</h2>
+              <button type="button" onClick={() => setModalPlanoId(null)} aria-label="Fechar">
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Papel no mês</label>
+              <select
+                value={novoPapel}
+                onChange={event => setNovoPapel(event.target.value)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                {Object.entries(PAPEL_LABEL).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setModoNovo(false)}
+                className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+                  !modoNovo ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
+                }`}
+              >
+                Da biblioteca
+              </button>
+              <button
+                type="button"
+                onClick={() => setModoNovo(true)}
+                className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+                  modoNovo ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
+                }`}
+              >
+                Livro novo
+              </button>
+            </div>
+
+            {!modoNovo ? (
+              <div className="space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Buscar título ou autor..."
+                    value={busca}
+                    onChange={event => setBusca(event.target.value)}
+                    autoFocus
+                    className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div className="max-h-56 space-y-1 overflow-y-auto">
+                  {livrosFiltrados.map(livro => {
+                    const jaNoMes = planoAtualModal?.plano_livros.some(
+                      planoLivro => planoLivro.livros?.id === livro.id
+                    )
+
+                    return (
+                      <button
+                        key={livro.id}
+                        type="button"
+                        disabled={jaNoMes || adicionando}
+                        onClick={() => adicionarLivroExistente(modalPlanoId, livro)}
+                        className={`w-full rounded-md px-3 py-2.5 text-left text-sm transition-colors ${
+                          jaNoMes ? 'cursor-not-allowed opacity-40' : 'hover:bg-secondary'
+                        }`}
+                      >
+                        <div className="font-medium">{livro.titulo}</div>
+                        {livro.autor && <div className="text-xs text-muted-foreground">{livro.autor}</div>}
+                        {jaNoMes && <div className="text-xs italic text-muted-foreground">já neste mês</div>}
+                      </button>
+                    )
+                  })}
+                  {livrosFiltrados.length === 0 && (
+                    <p className="py-4 text-center text-sm text-muted-foreground">Nenhum livro encontrado.</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Título *</label>
+                  <input
+                    type="text"
+                    value={novoTitulo}
+                    onChange={event => setNovoTitulo(event.target.value)}
+                    placeholder="Ex: Os Miseráveis"
+                    autoFocus
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Autor</label>
+                  <input
+                    type="text"
+                    value={novoAutor}
+                    onChange={event => setNovoAutor(event.target.value)}
+                    placeholder="Ex: Victor Hugo"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => adicionarLivroNovo(modalPlanoId)}
+                  disabled={adicionando || !novoTitulo.trim()}
+                  className="w-full rounded-md bg-primary py-2 text-sm font-medium text-primary-foreground transition-colors disabled:opacity-50"
+                >
+                  {adicionando ? 'Salvando...' : 'Criar e adicionar'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
