@@ -97,6 +97,7 @@ create table public.prosas (
   user_id uuid references public.profiles(id) on delete cascade not null,
   titulo text not null default 'Prosa gerada',
   conteudo text not null,
+  frase text,
   fontes jsonb,
   created_at timestamptz default now()
 );

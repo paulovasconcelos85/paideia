@@ -26,6 +26,7 @@ interface Prosa {
   id: string
   titulo: string
   conteudo: string
+  frase: string | null
   fontes: {
     pensamentos: number
     citacoes: number
@@ -75,6 +76,14 @@ function parsePlanoObs(obs: string | null): string[] {
 }
 
 type Aba = 'fragmentos' | 'caderno'
+type Janela = '7d' | '30d' | 'ultima' | 'custom'
+
+const JANELA_LABEL: Record<Janela, string> = {
+  '7d': '7 dias',
+  '30d': '30 dias',
+  'ultima': 'Última geração',
+  'custom': 'Personalizado',
+}
 
 export default function CadernoClient({
   userId,
@@ -101,6 +110,39 @@ export default function CadernoClient({
   const [gerando, setGerando] = useState(false)
   const [erroGerar, setErroGerar] = useState('')
   const [form, setForm] = useState({ conteudo: '', livro_id: '', tags: '' })
+
+  const [janela, setJanela] = useState<Janela>('ultima')
+  const hoje = new Date().toISOString().slice(0, 10)
+  const [customInicio, setCustomInicio] = useState(hoje)
+  const [customFim, setCustomFim] = useState(hoje)
+
+  function calcDatas(): { dataInicio: string; dataFim: string } {
+    const agora = new Date()
+    const fim = agora.toISOString()
+
+    if (janela === '7d') {
+      const inicio = new Date(agora)
+      inicio.setDate(inicio.getDate() - 7)
+      return { dataInicio: inicio.toISOString(), dataFim: fim }
+    }
+    if (janela === '30d') {
+      const inicio = new Date(agora)
+      inicio.setDate(inicio.getDate() - 30)
+      return { dataInicio: inicio.toISOString(), dataFim: fim }
+    }
+    if (janela === 'ultima') {
+      const ultimaProsa = prosas[0]?.created_at
+      const inicio = ultimaProsa
+        ? new Date(ultimaProsa).toISOString()
+        : new Date(0).toISOString()
+      return { dataInicio: inicio, dataFim: fim }
+    }
+    // custom
+    return {
+      dataInicio: new Date(customInicio + 'T00:00:00').toISOString(),
+      dataFim: new Date(customFim + 'T23:59:59').toISOString(),
+    }
+  }
 
   const totalEntradasPlano = planosComObs.reduce(
     (acc, plano) => acc + parsePlanoObs(plano.observacoes).length,
@@ -156,7 +198,12 @@ export default function CadernoClient({
     setErroGerar('')
 
     try {
-      const response = await fetch('/api/caderno/gerar', { method: 'POST' })
+      const { dataInicio, dataFim } = calcDatas()
+      const response = await fetch('/api/caderno/gerar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataInicio, dataFim }),
+      })
       const data = await response.json()
 
       if (!response.ok) {
@@ -169,6 +216,7 @@ export default function CadernoClient({
         id: data.id,
         titulo: data.titulo,
         conteudo: data.prosa,
+        frase: data.frase ?? null,
         fontes: data.fontes ?? null,
         created_at: data.created_at ?? new Date().toISOString(),
       }
@@ -186,14 +234,14 @@ export default function CadernoClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Caderno de Pensamentos</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {totalFragmentos} fragmentos · {prosas.length} prosas geradas
-          </p>
-        </div>
-        <div className="flex flex-wrap justify-end gap-2">
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Caderno de Pensamentos</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {totalFragmentos} fragmentos · {prosas.length} prosas geradas
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => setModalOpen(true)}
@@ -202,6 +250,44 @@ export default function CadernoClient({
             <Plus className="h-4 w-4" />
             Fragmento
           </button>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3">
+          <div className="flex flex-1 flex-wrap gap-1.5">
+            {(Object.entries(JANELA_LABEL) as [Janela, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setJanela(key)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  janela === key
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-secondary text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {janela === 'custom' && (
+            <div className="flex items-center gap-2 text-xs">
+              <input
+                type="date"
+                value={customInicio}
+                onChange={e => setCustomInicio(e.target.value)}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <span className="text-muted-foreground">até</span>
+              <input
+                type="date"
+                value={customFim}
+                onChange={e => setCustomFim(e.target.value)}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          )}
+
           <button
             type="button"
             onClick={gerarProsa}
@@ -209,7 +295,7 @@ export default function CadernoClient({
             className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             <Sparkles className="h-4 w-4" />
-            {gerando ? 'Gerando prosa...' : 'Gerar prosa'}
+            {gerando ? 'Gerando...' : 'Gerar prosa'}
           </button>
         </div>
       </div>
@@ -424,11 +510,20 @@ export default function CadernoClient({
               )}
 
               {prosaAtiva && (
-                <div className="space-y-4 rounded-xl border border-border bg-card p-6 md:p-8">
+                <div className="space-y-6 rounded-xl border border-border bg-card p-6 md:p-8">
                   <div className="flex items-center justify-between gap-4">
                     <h2 className="text-lg font-semibold">{prosaAtiva.titulo}</h2>
                     <span className="text-xs text-muted-foreground">{formatDate(prosaAtiva.created_at)}</span>
                   </div>
+
+                  {prosaAtiva.frase && (
+                    <div className="rounded-lg border-l-4 border-primary bg-primary/5 px-5 py-4">
+                      <p className="text-base font-medium italic leading-relaxed text-foreground">
+                        &ldquo;{prosaAtiva.frase}&rdquo;
+                      </p>
+                    </div>
+                  )}
+
                   {prosaAtiva.fontes && (
                     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                       <span>{prosaAtiva.fontes.pensamentos} pensamentos</span>
@@ -437,6 +532,7 @@ export default function CadernoClient({
                       <span>{prosaAtiva.fontes.observacoes_meses} obs. mensais</span>
                     </div>
                   )}
+
                   <div className="max-w-none text-foreground">
                     {prosaAtiva.conteudo.split('\n\n').map((paragrafo, index) => (
                       <p key={index} className="mb-4 text-sm leading-7 last:mb-0">

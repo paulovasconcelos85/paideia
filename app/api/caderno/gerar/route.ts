@@ -14,10 +14,13 @@ function buildSystemPrompt(aiPerfil: string | null, aiInstrucoes: string | null)
   }
 
   parts.push(
-    `Sua tarefa é pegar fragmentos de pensamentos, citações, observações de leitura e reflexões e transformá-los em um texto corrido, coeso e elegante, como um ensaio pessoal, na primeira pessoa, no estilo de um caderno intelectual.
-O texto deve conectar as ideias naturalmente, sem listar, sem tópicos, sem cabeçalhos. Prosa contínua.
-Escreva em português brasileiro culto mas não artificioso. Tom reflexivo, sério, mas não hermético.
-Não invente informações além do que está nos fragmentos. Conecte, elabore, aprofunde, mas a partir do que está ali.`
+    `Sua tarefa é pegar fragmentos de pensamentos, citações, observações de leitura e reflexões e transformá-los em dois elementos: uma frase de efeito e um texto de reflexão.
+
+Siga EXATAMENTE este formato na resposta, sem texto fora das tags:
+
+<frase>Uma única frase memorável e profunda que capture a essência do texto. Máximo 20 palavras. Deve poder ser lida sozinha, como uma sentença para meditar.</frase>
+
+<texto>O texto completo em prosa corrida, na primeira pessoa, no estilo de um caderno intelectual devocional. Sem listas, sem tópicos, sem cabeçalhos. Conecte as ideias naturalmente. Entre 400 e 600 palavras, terminando sempre com uma frase fechada — nunca no meio de uma ideia. Português brasileiro culto, tom reflexivo e sério.</texto>`
   )
 
   if (aiInstrucoes?.trim()) {
@@ -38,7 +41,7 @@ function parseObsEntries(obs: string | null): string[] {
   return obs.trim() ? [obs] : []
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -61,33 +64,48 @@ export async function POST() {
     )
   }
 
+  const body = await request.json().catch(() => ({}))
+  const dataInicio: string | undefined = body.dataInicio
+  const dataFim: string | undefined = body.dataFim
+
+  let qPensamentos = supabase
+    .from('pensamentos')
+    .select('conteudo, created_at, livros(titulo)')
+    .eq('user_id', user.id)
+    .order('created_at')
+  if (dataInicio) qPensamentos = qPensamentos.gte('created_at', dataInicio)
+  if (dataFim) qPensamentos = qPensamentos.lte('created_at', dataFim)
+
+  let qCitacoes = supabase
+    .from('citacoes')
+    .select('texto, pagina, livros(titulo, autor)')
+    .eq('user_id', user.id)
+    .order('created_at')
+  if (dataInicio) qCitacoes = qCitacoes.gte('created_at', dataInicio)
+  if (dataFim) qCitacoes = qCitacoes.lte('created_at', dataFim)
+
+  let qLivros = supabase
+    .from('livros')
+    .select('titulo, autor, observacoes, status')
+    .eq('user_id', user.id)
+    .not('observacoes', 'is', null)
+  if (dataInicio) qLivros = qLivros.gte('updated_at', dataInicio)
+  if (dataFim) qLivros = qLivros.lte('updated_at', dataFim)
+
+  let qPlanos = supabase
+    .from('planos_mensais')
+    .select('titulo, observacoes, numero_mes')
+    .eq('user_id', user.id)
+    .not('observacoes', 'is', null)
+  if (dataInicio) qPlanos = qPlanos.gte('updated_at', dataInicio)
+  if (dataFim) qPlanos = qPlanos.lte('updated_at', dataFim)
+
   const [
     { data: pensamentos },
     { data: citacoes },
     { data: livrosObs },
     { data: planosObs },
-  ] = await Promise.all([
-    supabase
-      .from('pensamentos')
-      .select('conteudo, created_at, livros(titulo)')
-      .eq('user_id', user.id)
-      .order('created_at'),
-    supabase
-      .from('citacoes')
-      .select('texto, pagina, livros(titulo, autor)')
-      .eq('user_id', user.id)
-      .order('created_at'),
-    supabase
-      .from('livros')
-      .select('titulo, autor, observacoes, status')
-      .eq('user_id', user.id)
-      .not('observacoes', 'is', null),
-    supabase
-      .from('planos_mensais')
-      .select('titulo, observacoes, numero_mes')
-      .eq('user_id', user.id)
-      .not('observacoes', 'is', null),
-  ])
+  ] = await Promise.all([qPensamentos, qCitacoes, qLivros, qPlanos])
 
   const fragmentos: string[] = []
 
@@ -154,7 +172,7 @@ export async function POST() {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 2000,
+      max_tokens: 4000,
       system: systemPrompt,
       messages: [
         {
@@ -171,7 +189,14 @@ export async function POST() {
   }
 
   const data = await response.json()
-  const prosa = data.content?.find((part: { type?: string }) => part.type === 'text')?.text ?? ''
+  const raw = data.content?.find((part: { type?: string }) => part.type === 'text')?.text ?? ''
+
+  const fraseMatch = raw.match(/<frase>([\s\S]*?)<\/frase>/)
+  const textoMatch = raw.match(/<texto>([\s\S]*?)<\/texto>/)
+
+  const frase = fraseMatch?.[1]?.trim() ?? ''
+  const prosa = textoMatch?.[1]?.trim() ?? raw.trim()
+
   const titulo = `Caderno — ${new Date().toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'long',
@@ -186,7 +211,7 @@ export async function POST() {
 
   const { data: saved, error: saveError } = await supabase
     .from('prosas')
-    .insert({ user_id: user.id, titulo, conteudo: prosa, fontes })
+    .insert({ user_id: user.id, titulo, conteudo: prosa, frase: frase || null, fontes })
     .select()
     .single()
 
@@ -196,6 +221,7 @@ export async function POST() {
 
   return NextResponse.json({
     prosa,
+    frase,
     id: saved?.id,
     titulo: saved?.titulo ?? titulo,
     fontes: saved?.fontes ?? fontes,
