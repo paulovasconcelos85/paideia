@@ -274,7 +274,7 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
 
     const { data, error } = await supabase
       .from('plano_livros')
-      .insert({ plano_id: planoId, livro_id: livro.id, papel: novoPapel, ordem })
+      .insert({ plano_id: planoId, livro_id: livro.id, papel: novoPapel, ordem, user_id: userId })
       .select('id, papel, ordem, observacoes, livros(id, titulo, autor, status, nota, eixos(nome, cor))')
       .single()
 
@@ -324,7 +324,7 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
     const ordem = (plano?.plano_livros.length ?? 0) + 1
     const { data, error } = await supabase
       .from('plano_livros')
-      .insert({ plano_id: planoId, livro_id: livro.id, papel: novoPapel, ordem })
+      .insert({ plano_id: planoId, livro_id: livro.id, papel: novoPapel, ordem, user_id: userId })
       .select('id, papel, ordem, observacoes, livros(id, titulo, autor, status, nota, eixos(nome, cor))')
       .single()
 
