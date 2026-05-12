@@ -1,6 +1,43 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+function buildSystemPrompt(aiPerfil: string | null, aiInstrucoes: string | null): string {
+  const parts: string[] = []
+
+  parts.push('Você é um assistente literário personalizado.')
+
+  if (aiPerfil?.trim()) {
+    parts.push(
+      `O leitor para quem você escreve tem o seguinte perfil: ${aiPerfil.trim()}.\n` +
+      `Ao gerar o texto, respeite esse perfil: os valores, a perspectiva e o vocabulário devem refletir quem é esse leitor.`
+    )
+  }
+
+  parts.push(
+    `Sua tarefa é pegar fragmentos de pensamentos, citações, observações de leitura e reflexões e transformá-los em um texto corrido, coeso e elegante, como um ensaio pessoal, na primeira pessoa, no estilo de um caderno intelectual.
+O texto deve conectar as ideias naturalmente, sem listar, sem tópicos, sem cabeçalhos. Prosa contínua.
+Escreva em português brasileiro culto mas não artificioso. Tom reflexivo, sério, mas não hermético.
+Não invente informações além do que está nos fragmentos. Conecte, elabore, aprofunde, mas a partir do que está ali.`
+  )
+
+  if (aiInstrucoes?.trim()) {
+    parts.push(`Instruções adicionais do leitor:\n${aiInstrucoes.trim()}`)
+  }
+
+  return parts.join('\n\n')
+}
+
+function parseObsEntries(obs: string | null): string[] {
+  if (!obs) return []
+  try {
+    const parsed = JSON.parse(obs)
+    if (Array.isArray(parsed)) return parsed.filter(Boolean)
+  } catch {
+    // plain text
+  }
+  return obs.trim() ? [obs] : []
+}
+
 export async function POST() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -9,8 +46,19 @@ export async function POST() {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY não configurada.' }, { status: 500 })
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('anthropic_api_key, ai_perfil, ai_instrucoes')
+    .eq('id', user.id)
+    .single()
+
+  const apiKey = profile?.anthropic_api_key?.trim()
+
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: 'Chave da API Anthropic não configurada. Acesse Configurações para adicionar a sua.' },
+      { status: 400 }
+    )
   }
 
   const [
@@ -81,65 +129,45 @@ export async function POST() {
   }
 
   if (planosObs?.length) {
-    fragmentos.push(
-      '## Anotações mensais\n' +
-        planosObs.map(plano => `- [${plano.titulo}]: ${plano.observacoes}`).join('\n')
-    )
+    const linhas = planosObs.flatMap(plano => {
+      const entries = parseObsEntries(plano.observacoes)
+      return entries.map(entry => `- [${plano.titulo}]: ${entry}`)
+    })
+    if (linhas.length) {
+      fragmentos.push('## Anotações mensais\n' + linhas.join('\n'))
+    }
   }
 
   if (!fragmentos.length) {
     return NextResponse.json({ error: 'Nenhuma anotação encontrada ainda.' }, { status: 400 })
   }
 
-  const modelCandidates = [
-    process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5',
-  ].filter((model, index, models) => models.indexOf(model) === index)
+  const model = process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5'
+  const systemPrompt = buildSystemPrompt(profile?.ai_perfil ?? null, profile?.ai_instrucoes ?? null)
 
-  const payload = {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
       max_tokens: 2000,
-      system: `Você é um assistente literário de um leitor cristão reformado, conservador e amante da boa literatura e da arte clássica.
-Sua tarefa é pegar fragmentos de pensamentos, citações, observações de leitura e reflexões e transformá-los em um texto corrido, coeso e elegante, como um ensaio pessoal, na primeira pessoa, no estilo de um caderno intelectual.
-O texto deve conectar as ideias naturalmente, sem listar, sem tópicos, sem cabeçalhos. Prosa contínua.
-Preserve o espírito cristão reformado, conservador e literário das anotações.
-Escreva em português brasileiro culto mas não artificioso. Tom reflexivo, sério, mas não hermético.
-Não invente informações além do que está nos fragmentos. Conecte, elabore, aprofunde, mas a partir do que está ali.`,
+      system: systemPrompt,
       messages: [
         {
           role: 'user',
           content: `Aqui estão meus fragmentos de leitura e pensamento. Transforme-os em um texto corrido, como páginas de um caderno intelectual pessoal:\n\n${fragmentos.join('\n\n')}`,
         },
       ],
-  }
+    }),
+  })
 
-  let response: Response | null = null
-  let lastErrorText = ''
-  let usedModel = modelCandidates[0]
-
-  for (const model of modelCandidates) {
-    response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({ model, ...payload }),
-    })
-
-    if (response.ok) {
-      usedModel = model
-      break
-    }
-
-    lastErrorText = await response.text()
-
-    if (!lastErrorText.includes('not_found_error')) {
-      break
-    }
-  }
-
-  if (!response?.ok) {
-    return NextResponse.json({ error: `Erro na API Claude: ${lastErrorText}` }, { status: 500 })
+  if (!response.ok) {
+    const errorText = await response.text()
+    return NextResponse.json({ error: `Erro na API Claude: ${errorText}` }, { status: 500 })
   }
 
   const data = await response.json()
@@ -158,12 +186,7 @@ Não invente informações além do que está nos fragmentos. Conecte, elabore, 
 
   const { data: saved, error: saveError } = await supabase
     .from('prosas')
-    .insert({
-      user_id: user.id,
-      titulo,
-      conteudo: prosa,
-      fontes,
-    })
+    .insert({ user_id: user.id, titulo, conteudo: prosa, fontes })
     .select()
     .single()
 
@@ -177,6 +200,6 @@ Não invente informações além do que está nos fragmentos. Conecte, elabore, 
     titulo: saved?.titulo ?? titulo,
     fontes: saved?.fontes ?? fontes,
     created_at: saved?.created_at,
-    model: usedModel,
+    model,
   })
 }

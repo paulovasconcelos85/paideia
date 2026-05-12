@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BookOpen, CalendarDays, LayoutDashboard, Library, LogOut, NotebookPen, Quote } from 'lucide-react'
+import { BookOpen, CalendarDays, LayoutDashboard, Library, LogOut, NotebookPen, Quote, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/lib/types'
 
@@ -13,6 +13,7 @@ const NAV = [
   { href: '/plano', label: 'Plano mensal', icon: CalendarDays },
   { href: '/citacoes', label: 'Citações', icon: Quote },
   { href: '/caderno', label: 'Caderno', icon: NotebookPen },
+  { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ]
 
 export default function Sidebar({ profile }: { profile: Profile | null }) {

@@ -43,6 +43,9 @@ export interface Profile {
   email: string | null
   name: string | null
   avatar_url: string | null
+  anthropic_api_key: string | null
+  ai_perfil: string | null
+  ai_instrucoes: string | null
 }
 
 export interface DashboardStats {

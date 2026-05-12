@@ -8,6 +8,9 @@ create table public.profiles (
   email text,
   name text,
   avatar_url text,
+  anthropic_api_key text,
+  ai_perfil text,
+  ai_instrucoes text,
   created_at timestamptz default now()
 );
 
