@@ -63,7 +63,7 @@ export default function CadernoClient({
   citacoes: initCitacoes,
   prosas: initProsas,
   livros,
-  livrosObservados,
+  livrosObservados: initLivrosObservados,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -74,6 +74,7 @@ export default function CadernoClient({
   const [citacoes] = useState(initCitacoes)
   const [prosas, setProsas] = useState(initProsas)
   const [prosaAtiva, setProsaAtiva] = useState<Prosa | null>(initProsas[0] ?? null)
+  const [livrosObservados, setLivrosObservados] = useState(initLivrosObservados)
 
   const [modalOpen, setModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -116,6 +117,13 @@ export default function CadernoClient({
     const { error } = await supabase.from('pensamentos').delete().eq('id', id)
     if (!error) {
       setPensamentos(prev => prev.filter(pensamento => pensamento.id !== id))
+    }
+  }
+
+  async function deletarObsLivro(livroId: string) {
+    const { error } = await supabase.from('livros').update({ observacoes: null }).eq('id', livroId)
+    if (!error) {
+      setLivrosObservados(prev => prev.filter(l => l.id !== livroId))
     }
   }
 
@@ -301,14 +309,26 @@ export default function CadernoClient({
             ) : (
               <div className="space-y-2">
                 {livrosObservados.map(livro => (
-                  <div key={livro.id} className="rounded-lg border border-border bg-card p-4">
-                    <p className="text-sm leading-relaxed">{livro.observacoes}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <BookOpen className="h-3 w-3" /> {livro.titulo}
-                      </span>
-                      {livro.autor && <span>— {livro.autor}</span>}
-                      <span className="ml-auto">{formatDate(livro.updated_at)}</span>
+                  <div key={livro.id} className="group rounded-lg border border-border bg-card p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm leading-relaxed">{livro.observacoes}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <BookOpen className="h-3 w-3" /> {livro.titulo}
+                          </span>
+                          {livro.autor && <span>— {livro.autor}</span>}
+                          <span className="ml-auto">{formatDate(livro.updated_at)}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deletarObsLivro(livro.id)}
+                        className="p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                        aria-label="Excluir observação"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </div>
                 ))}

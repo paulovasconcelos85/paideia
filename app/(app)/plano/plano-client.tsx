@@ -7,6 +7,27 @@ import { createClient } from '@/lib/supabase/client'
 import { STATUS_CONFIG } from '@/lib/utils'
 import type { Status } from '@/lib/types'
 
+type EntradaObs = { key: string; value: string }
+
+function parseObs(obs: string | null): EntradaObs[] {
+  if (!obs) return []
+  try {
+    const parsed = JSON.parse(obs)
+    if (Array.isArray(parsed)) {
+      return parsed.filter(Boolean).map((v: string) => ({ key: Math.random().toString(36).slice(2), value: v }))
+    }
+  } catch {
+    // not JSON
+  }
+  return obs.trim() ? [{ key: Math.random().toString(36).slice(2), value: obs }] : []
+}
+
+function stringifyObs(entries: EntradaObs[]): string | null {
+  const values = entries.map(e => e.value).filter(v => v.trim())
+  if (!values.length) return null
+  return JSON.stringify(values)
+}
+
 const PAPEL_LABEL: Record<string, string> = {
   principal: 'Principal',
   literatura: 'Literatura',
@@ -318,16 +339,16 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
     }
   }
 
-  async function salvarObsMes(planoId: string, observacoes: string) {
+  async function salvarObsMes(planoId: string, observacoes: string | null) {
     const { error } = await supabase
       .from('planos_mensais')
-      .update({ observacoes: observacoes.trim() || null })
+      .update({ observacoes })
       .eq('id', planoId)
 
     if (!error) {
       setPlanos(prev =>
         prev.map(plano =>
-          plano.id === planoId ? { ...plano, observacoes: observacoes.trim() || null } : plano
+          plano.id === planoId ? { ...plano, observacoes } : plano
         )
       )
     }
@@ -535,8 +556,8 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                     <label className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <BookOpen className="h-3 w-3" /> Anotações do mês
                     </label>
-                    <ObsField
-                      initialValue={plano.observacoes ?? ''}
+                    <AnotacoesField
+                      initialObs={plano.observacoes}
                       onSave={value => salvarObsMes(plano.id, value)}
                     />
                   </div>
@@ -690,37 +711,98 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
   )
 }
 
-function ObsField({ initialValue, onSave }: { initialValue: string; onSave: (value: string) => void }) {
-  const [value, setValue] = useState(initialValue)
+function EntradaObsField({
+  value,
+  onSave,
+  onDelete,
+}: {
+  value: string
+  onSave: (value: string) => void
+  onDelete: () => void
+}) {
+  const [val, setVal] = useState(value)
   const [saved, setSaved] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
-    const nextValue = event.target.value
-    setValue(nextValue)
-
+    const next = event.target.value
+    setVal(next)
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
-      onSave(nextValue)
+      onSave(next)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     }, 800)
   }
 
   return (
-    <div className="relative">
+    <div className="group relative">
       <textarea
         rows={2}
-        value={value}
+        value={val}
         onChange={handleChange}
-        placeholder="Anotações, metas ou reflexões sobre este mês..."
-        className="min-h-20 w-full resize rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        placeholder="Anotação, reflexão ou meta..."
+        className="min-h-16 w-full resize rounded-md border border-border bg-background px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
       />
       {saved && (
-        <span className="absolute bottom-2 right-3 flex items-center gap-1 text-xs text-green-500">
+        <span className="absolute bottom-2 right-8 flex items-center gap-1 text-xs text-green-500">
           <Check className="h-3 w-3" /> Salvo
         </span>
       )}
+      <button
+        type="button"
+        onClick={onDelete}
+        className="absolute right-2 top-2 p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+        aria-label="Remover anotação"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
+    </div>
+  )
+}
+
+function AnotacoesField({
+  initialObs,
+  onSave,
+}: {
+  initialObs: string | null
+  onSave: (value: string | null) => void
+}) {
+  const [entries, setEntries] = useState<EntradaObs[]>(() => parseObs(initialObs))
+
+  function adicionarEntrada() {
+    setEntries(prev => [...prev, { key: Math.random().toString(36).slice(2), value: '' }])
+  }
+
+  function atualizarEntrada(key: string, valor: string) {
+    const next = entries.map(e => e.key === key ? { ...e, value: valor } : e)
+    setEntries(next)
+    onSave(stringifyObs(next))
+  }
+
+  function removerEntrada(key: string) {
+    const next = entries.filter(e => e.key !== key)
+    setEntries(next)
+    onSave(stringifyObs(next))
+  }
+
+  return (
+    <div className="space-y-2">
+      {entries.map(entry => (
+        <EntradaObsField
+          key={entry.key}
+          value={entry.value}
+          onSave={valor => atualizarEntrada(entry.key, valor)}
+          onDelete={() => removerEntrada(entry.key)}
+        />
+      ))}
+      <button
+        type="button"
+        onClick={adicionarEntrada}
+        className="flex items-center gap-1.5 text-xs text-primary transition-colors hover:text-primary/80"
+      >
+        <Plus className="h-3.5 w-3.5" /> Adicionar anotação
+      </button>
     </div>
   )
 }
