@@ -37,6 +37,8 @@ export default function ConfiguracoesClient({ userId, anthropicApiKey, aiPerfil,
   const [instrucoes, setInstrucoes] = useState(aiInstrucoes ?? '')
   const [perfilSalvo, setPerfilSalvo] = useState(false)
   const [instrucoesSalvas, setInstrucoesSalvas] = useState(false)
+  const [perfilErro, setPerfilErro] = useState('')
+  const [instrucoesErro, setInstrucoesErro] = useState('')
 
   const perfilTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const instrucoesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -63,33 +65,48 @@ export default function ConfiguracoesClient({ userId, anthropicApiKey, aiPerfil,
   function handlePerfilChange(event: ChangeEvent<HTMLTextAreaElement>) {
     const value = event.target.value
     setPerfil(value)
+    setPerfilErro('')
     if (perfilTimer.current) clearTimeout(perfilTimer.current)
     perfilTimer.current = setTimeout(async () => {
-      await supabase.from('profiles').update({ ai_perfil: value.trim() || null }).eq('id', userId)
-      setPerfilSalvo(true)
-      setTimeout(() => setPerfilSalvo(false), 2000)
+      const { error } = await supabase.from('profiles').update({ ai_perfil: value.trim() || null }).eq('id', userId)
+      if (error) {
+        setPerfilErro(error.message)
+      } else {
+        setPerfilSalvo(true)
+        setTimeout(() => setPerfilSalvo(false), 2000)
+      }
     }, 800)
   }
 
   function handleInstrucoesChange(event: ChangeEvent<HTMLTextAreaElement>) {
     const value = event.target.value
     setInstrucoes(value)
+    setInstrucoesErro('')
     if (instrucoesTimer.current) clearTimeout(instrucoesTimer.current)
     instrucoesTimer.current = setTimeout(async () => {
-      await supabase.from('profiles').update({ ai_instrucoes: value.trim() || null }).eq('id', userId)
-      setInstrucoesSalvas(true)
-      setTimeout(() => setInstrucoesSalvas(false), 2000)
+      const { error } = await supabase.from('profiles').update({ ai_instrucoes: value.trim() || null }).eq('id', userId)
+      if (error) {
+        setInstrucoesErro(error.message)
+      } else {
+        setInstrucoesSalvas(true)
+        setTimeout(() => setInstrucoesSalvas(false), 2000)
+      }
     }, 800)
   }
 
   function adicionarTag(tag: string) {
     const novo = perfil.trim() ? `${perfil.trim()}, ${tag}` : tag
     setPerfil(novo)
+    setPerfilErro('')
     if (perfilTimer.current) clearTimeout(perfilTimer.current)
     perfilTimer.current = setTimeout(async () => {
-      await supabase.from('profiles').update({ ai_perfil: novo }).eq('id', userId)
-      setPerfilSalvo(true)
-      setTimeout(() => setPerfilSalvo(false), 2000)
+      const { error } = await supabase.from('profiles').update({ ai_perfil: novo }).eq('id', userId)
+      if (error) {
+        setPerfilErro(error.message)
+      } else {
+        setPerfilSalvo(true)
+        setTimeout(() => setPerfilSalvo(false), 2000)
+      }
     }, 800)
   }
 
@@ -215,7 +232,7 @@ export default function ConfiguracoesClient({ userId, anthropicApiKey, aiPerfil,
           ))}
         </div>
 
-        <div className="relative">
+        <div className="space-y-1.5">
           <textarea
             rows={4}
             value={perfil}
@@ -223,6 +240,7 @@ export default function ConfiguracoesClient({ userId, anthropicApiKey, aiPerfil,
             placeholder="Ex: Cristão reformado, conservador, presbiteriano, leitor de teologia clássica, filosofia política e literatura ocidental. Valorizo a tradição intelectual da Reforma e o pensamento conservador."
             className="w-full resize rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
+          {perfilErro && <p className="text-xs text-destructive">{perfilErro}</p>}
         </div>
       </section>
 
@@ -243,7 +261,7 @@ export default function ConfiguracoesClient({ userId, anthropicApiKey, aiPerfil,
           o que evitar, etc.
         </p>
 
-        <div className="relative">
+        <div className="space-y-1.5">
           <textarea
             rows={5}
             value={instrucoes}
@@ -256,6 +274,7 @@ export default function ConfiguracoesClient({ userId, anthropicApiKey, aiPerfil,
 - O tom deve ser sério e contemplativo, não emocional`}
             className="w-full resize rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
+          {instrucoesErro && <p className="text-xs text-destructive">{instrucoesErro}</p>}
         </div>
       </section>
     </div>

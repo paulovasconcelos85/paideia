@@ -136,11 +136,10 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
 
   const [modalPlanoId, setModalPlanoId] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
-  const [novoTitulo, setNovoTitulo] = useState('')
   const [novoAutor, setNovoAutor] = useState('')
   const [novoPapel, setNovoPapel] = useState('literatura')
   const [adicionando, setAdicionando] = useState(false)
-  const [modoNovo, setModoNovo] = useState(false)
+  const [erroModal, setErroModal] = useState('')
 
   const hoje = new Date()
   const mesAtual = hoje.getMonth() + 1
@@ -186,14 +185,13 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
   }, [anoAtual, mesAtual, planos])
 
   const livrosFiltrados = useMemo(() => {
-    if (!busca.trim()) return livrosBiblioteca.slice(0, 8)
+    if (!busca.trim()) return livrosBiblioteca.slice(0, 12)
 
     const query = busca.toLowerCase()
-    return livrosBiblioteca
-      .filter(livro =>
+    return livrosBiblioteca.filter(
+      livro =>
         livro.titulo.toLowerCase().includes(query) || (livro.autor ?? '').toLowerCase().includes(query)
-      )
-      .slice(0, 8)
+    )
   }, [busca, livrosBiblioteca])
 
   const planoAtualModal = planos.find(plano => plano.id === modalPlanoId)
@@ -270,6 +268,7 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
 
   async function adicionarLivroExistente(planoId: string, livro: LivroSimples) {
     setAdicionando(true)
+    setErroModal('')
     const plano = planos.find(item => item.id === planoId)
     const ordem = (plano?.plano_livros.length ?? 0) + 1
 
@@ -281,36 +280,43 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
 
     setAdicionando(false)
 
-    if (!error && data) {
+    if (error) {
+      setErroModal(error.message)
+      return
+    }
+
+    if (data) {
       const novoItem = normalizePlanoLivro(data)
       setPlanos(prev =>
         prev.map(item =>
           item.id === planoId ? { ...item, plano_livros: [...item.plano_livros, novoItem] } : item
         )
       )
-      setBusca('')
-      setModalPlanoId(null)
+      fecharModal()
       startTransition(() => router.refresh())
     }
   }
 
   async function adicionarLivroNovo(planoId: string) {
-    if (!novoTitulo.trim()) return
+    if (!busca.trim()) return
 
     setAdicionando(true)
+    setErroModal('')
+
     const { data: livro, error: errLivro } = await supabase
       .from('livros')
       .insert({
         user_id: userId,
-        titulo: novoTitulo.trim(),
+        titulo: busca.trim(),
         autor: novoAutor.trim() || null,
-        status: 'comprar',
+        status: 'quero',
       })
       .select('id, titulo, autor, status, nota, eixos(nome, cor)')
       .single()
 
     if (errLivro || !livro) {
       setAdicionando(false)
+      setErroModal(errLivro?.message ?? 'Erro ao criar livro.')
       return
     }
 
@@ -324,19 +330,28 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
 
     setAdicionando(false)
 
-    if (!error && data) {
+    if (error) {
+      setErroModal(error.message)
+      return
+    }
+
+    if (data) {
       const novoItem = normalizePlanoLivro(data)
       setPlanos(prev =>
         prev.map(item =>
           item.id === planoId ? { ...item, plano_livros: [...item.plano_livros, novoItem] } : item
         )
       )
-      setNovoTitulo('')
-      setNovoAutor('')
-      setModoNovo(false)
-      setModalPlanoId(null)
+      fecharModal()
       startTransition(() => router.refresh())
     }
+  }
+
+  function fecharModal() {
+    setModalPlanoId(null)
+    setBusca('')
+    setNovoAutor('')
+    setErroModal('')
   }
 
   async function salvarObsMes(planoId: string, observacoes: string | null) {
@@ -545,7 +560,8 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                     onClick={() => {
                       setModalPlanoId(plano.id)
                       setBusca('')
-                      setModoNovo(false)
+                      setNovoAutor('')
+                      setErroModal('')
                     }}
                     className="flex items-center gap-2 text-sm text-primary transition-colors hover:text-primary/80"
                   >
@@ -584,13 +600,13 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={event => {
-            if (event.target === event.currentTarget) setModalPlanoId(null)
+            if (event.target === event.currentTarget) fecharModal()
           }}
         >
           <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-background p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Adicionar livro</h2>
-              <button type="button" onClick={() => setModalPlanoId(null)} aria-label="Fechar">
+              <button type="button" onClick={fecharModal} aria-label="Fechar">
                 <X className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
@@ -610,100 +626,79 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
               </select>
             </div>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setModoNovo(false)}
-                className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
-                  !modoNovo ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
-                }`}
-              >
-                Da biblioteca
-              </button>
-              <button
-                type="button"
-                onClick={() => setModoNovo(true)}
-                className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
-                  modoNovo ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
-                }`}
-              >
-                Livro novo
-              </button>
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Buscar ou digitar título do livro..."
+                  value={busca}
+                  onChange={event => { setBusca(event.target.value); setErroModal('') }}
+                  autoFocus
+                  className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+
+              {erroModal && (
+                <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-600">{erroModal}</p>
+              )}
+
+              <div className="max-h-60 space-y-1 overflow-y-auto">
+                {livrosFiltrados.map(livro => {
+                  const jaNoMes = planoAtualModal?.plano_livros.some(
+                    planoLivro => planoLivro.livros?.id === livro.id
+                  )
+
+                  return (
+                    <button
+                      key={livro.id}
+                      type="button"
+                      disabled={jaNoMes || adicionando}
+                      onClick={() => adicionarLivroExistente(modalPlanoId, livro)}
+                      className={`w-full rounded-md px-3 py-2.5 text-left text-sm transition-colors ${
+                        jaNoMes ? 'cursor-not-allowed opacity-40' : 'hover:bg-secondary'
+                      }`}
+                    >
+                      <div className="font-medium">{livro.titulo}</div>
+                      {livro.autor && <div className="text-xs text-muted-foreground">{livro.autor}</div>}
+                      {jaNoMes && <div className="text-xs italic text-muted-foreground">já neste mês</div>}
+                    </button>
+                  )
+                })}
+
+                {livrosFiltrados.length === 0 && !busca.trim() && (
+                  <p className="py-3 text-center text-sm text-muted-foreground">
+                    Nenhum livro na biblioteca ainda.
+                  </p>
+                )}
+              </div>
+
+              {busca.trim() && !livrosFiltrados.some(l => l.titulo.toLowerCase() === busca.toLowerCase()) && (
+                <div className="space-y-2 border-t border-border pt-3">
+                  <p className="text-xs text-muted-foreground">Não está na biblioteca? Adicione agora:</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={novoAutor}
+                      onChange={event => setNovoAutor(event.target.value)}
+                      placeholder="Autor (opcional)"
+                      className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => adicionarLivroNovo(modalPlanoId)}
+                      disabled={adicionando}
+                      className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {adicionando ? '...' : 'Adicionar'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Será criado: <strong>{busca.trim()}</strong>
+                  </p>
+                </div>
+              )}
             </div>
-
-            {!modoNovo ? (
-              <div className="space-y-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Buscar título ou autor..."
-                    value={busca}
-                    onChange={event => setBusca(event.target.value)}
-                    autoFocus
-                    className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </div>
-                <div className="max-h-56 space-y-1 overflow-y-auto">
-                  {livrosFiltrados.map(livro => {
-                    const jaNoMes = planoAtualModal?.plano_livros.some(
-                      planoLivro => planoLivro.livros?.id === livro.id
-                    )
-
-                    return (
-                      <button
-                        key={livro.id}
-                        type="button"
-                        disabled={jaNoMes || adicionando}
-                        onClick={() => adicionarLivroExistente(modalPlanoId, livro)}
-                        className={`w-full rounded-md px-3 py-2.5 text-left text-sm transition-colors ${
-                          jaNoMes ? 'cursor-not-allowed opacity-40' : 'hover:bg-secondary'
-                        }`}
-                      >
-                        <div className="font-medium">{livro.titulo}</div>
-                        {livro.autor && <div className="text-xs text-muted-foreground">{livro.autor}</div>}
-                        {jaNoMes && <div className="text-xs italic text-muted-foreground">já neste mês</div>}
-                      </button>
-                    )
-                  })}
-                  {livrosFiltrados.length === 0 && (
-                    <p className="py-4 text-center text-sm text-muted-foreground">Nenhum livro encontrado.</p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Título *</label>
-                  <input
-                    type="text"
-                    value={novoTitulo}
-                    onChange={event => setNovoTitulo(event.target.value)}
-                    placeholder="Ex: Os Miseráveis"
-                    autoFocus
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Autor</label>
-                  <input
-                    type="text"
-                    value={novoAutor}
-                    onChange={event => setNovoAutor(event.target.value)}
-                    placeholder="Ex: Victor Hugo"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => adicionarLivroNovo(modalPlanoId)}
-                  disabled={adicionando || !novoTitulo.trim()}
-                  className="w-full rounded-md bg-primary py-2 text-sm font-medium text-primary-foreground transition-colors disabled:opacity-50"
-                >
-                  {adicionando ? 'Salvando...' : 'Criar e adicionar'}
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -723,13 +718,18 @@ function EntradaObsField({
   const [val, setVal] = useState(value)
   const [saved, setSaved] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onSaveRef = useRef(onSave)
+
+  useEffect(() => {
+    onSaveRef.current = onSave
+  })
 
   function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
     const next = event.target.value
     setVal(next)
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
-      onSave(next)
+      onSaveRef.current(next)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     }, 800)
@@ -775,9 +775,11 @@ function AnotacoesField({
   }
 
   function atualizarEntrada(key: string, valor: string) {
-    const next = entries.map(e => e.key === key ? { ...e, value: valor } : e)
-    setEntries(next)
-    onSave(stringifyObs(next))
+    setEntries(prev => {
+      const next = prev.map(e => e.key === key ? { ...e, value: valor } : e)
+      onSave(stringifyObs(next))
+      return next
+    })
   }
 
   function removerEntrada(key: string) {

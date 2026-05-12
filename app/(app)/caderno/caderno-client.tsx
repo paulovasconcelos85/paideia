@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { BookOpen, Lightbulb, Plus, Quote, Sparkles, Trash2, X } from 'lucide-react'
+import { BookOpen, CalendarDays, Lightbulb, Plus, Quote, Sparkles, Trash2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
 
@@ -46,6 +46,13 @@ interface LivroObservado extends Livro {
   updated_at: string
 }
 
+interface PlanoObs {
+  id: string
+  titulo: string
+  observacoes: string | null
+  updated_at: string
+}
+
 interface Props {
   userId: string
   pensamentos: Pensamento[]
@@ -53,6 +60,18 @@ interface Props {
   prosas: Prosa[]
   livros: Livro[]
   livrosObservados: LivroObservado[]
+  planosComObs: PlanoObs[]
+}
+
+function parsePlanoObs(obs: string | null): string[] {
+  if (!obs) return []
+  try {
+    const parsed = JSON.parse(obs)
+    if (Array.isArray(parsed)) return parsed.filter(Boolean)
+  } catch {
+    // plain text (backward compat)
+  }
+  return obs.trim() ? [obs] : []
 }
 
 type Aba = 'fragmentos' | 'caderno'
@@ -64,6 +83,7 @@ export default function CadernoClient({
   prosas: initProsas,
   livros,
   livrosObservados: initLivrosObservados,
+  planosComObs,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -82,7 +102,11 @@ export default function CadernoClient({
   const [erroGerar, setErroGerar] = useState('')
   const [form, setForm] = useState({ conteudo: '', livro_id: '', tags: '' })
 
-  const totalFragmentos = pensamentos.length + citacoes.length + livrosObservados.length
+  const totalEntradasPlano = planosComObs.reduce(
+    (acc, plano) => acc + parsePlanoObs(plano.observacoes).length,
+    0
+  )
+  const totalFragmentos = pensamentos.length + citacoes.length + livrosObservados.length + totalEntradasPlano
 
   async function salvarPensamento() {
     if (!form.conteudo.trim()) return
@@ -302,6 +326,7 @@ export default function CadernoClient({
             <h2 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <BookOpen className="h-3.5 w-3.5" /> Observações de livros ({livrosObservados.length})
             </h2>
+
             {livrosObservados.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                 Nenhuma observação de livro ainda. Abra um livro na Biblioteca e preencha o campo de observações.
@@ -332,6 +357,34 @@ export default function CadernoClient({
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h2 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" /> Anotações do plano ({totalEntradasPlano})
+            </h2>
+            {planosComObs.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                Nenhuma anotação de plano ainda. Abra um mês no Plano e use "Adicionar anotação".
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {planosComObs.map(plano => {
+                  const entradas = parsePlanoObs(plano.observacoes)
+                  if (!entradas.length) return null
+                  return entradas.map((entrada, i) => (
+                    <div key={`${plano.id}-${i}`} className="rounded-lg border border-border bg-card p-4">
+                      <p className="text-sm leading-relaxed">{entrada}</p>
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <CalendarDays className="h-3 w-3" />
+                        <span>{plano.titulo}</span>
+                        <span className="ml-auto">{formatDate(plano.updated_at)}</span>
+                      </div>
+                    </div>
+                  ))
+                })}
               </div>
             )}
           </div>

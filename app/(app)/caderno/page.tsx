@@ -11,6 +11,7 @@ export default async function CadernoPage() {
     { data: prosas },
     { data: livros },
     { data: livrosObservados },
+    { data: planosComObs },
   ] = await Promise.all([
     supabase
       .from('pensamentos')
@@ -38,6 +39,12 @@ export default async function CadernoPage() {
       .eq('user_id', user!.id)
       .not('observacoes', 'is', null)
       .order('updated_at', { ascending: false }),
+    supabase
+      .from('planos_mensais')
+      .select('id, titulo, observacoes, updated_at')
+      .eq('user_id', user!.id)
+      .not('observacoes', 'is', null)
+      .order('numero_mes', { ascending: false }),
   ])
 
   return (
@@ -48,6 +55,7 @@ export default async function CadernoPage() {
       prosas={prosas ?? []}
       livros={livros ?? []}
       livrosObservados={livrosObservados ?? []}
+      planosComObs={planosComObs ?? []}
     />
   )
 }
