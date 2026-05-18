@@ -18,5 +18,5 @@ export default async function CitacoesPage() {
       .order('titulo'),
   ])
 
-  return <CitacoesClient citacoes={citacoes ?? []} livros={livros ?? []} />
+  return <CitacoesClient userId={user!.id} citacoes={citacoes ?? []} livros={livros ?? []} />
 }

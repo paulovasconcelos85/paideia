@@ -10,11 +10,12 @@ import { formatDate } from '@/lib/utils'
 interface Livro { id: string; titulo: string; autor: string | null }
 
 interface Props {
+  userId: string
   citacoes: Citacao[]
   livros: Livro[]
 }
 
-export default function CitacoesClient({ citacoes: initial, livros }: Props) {
+export default function CitacoesClient({ userId, citacoes: initial, livros }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -30,6 +31,7 @@ export default function CitacoesClient({ citacoes: initial, livros }: Props) {
     const { data, error } = await supabase
       .from('citacoes')
       .insert({
+        user_id: userId,
         texto: form.texto.trim(),
         livro_id: form.livro_id || null,
         pagina: form.pagina ? Number(form.pagina) : null,

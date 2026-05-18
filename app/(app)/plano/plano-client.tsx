@@ -395,6 +395,7 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
           plano.id === planoId ? { ...plano, observacoes } : plano
         )
       )
+      startTransition(() => router.refresh())
     }
   }
 
