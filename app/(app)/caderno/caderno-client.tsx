@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { BookOpen, CalendarDays, Lightbulb, Plus, Quote, Sparkles, Trash2, X } from 'lucide-react'
+import { BookOpen, CalendarDays, Globe, Lightbulb, Plus, Quote, Sparkles, Trash2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
 
@@ -10,6 +10,7 @@ interface Pensamento {
   id: string
   conteudo: string
   tags: string[] | null
+  publico: boolean
   created_at: string
   livros?: { titulo: string } | null
 }
@@ -27,6 +28,7 @@ interface Prosa {
   titulo: string
   conteudo: string
   frase: string | null
+  publico: boolean
   fontes: {
     pensamentos: number
     citacoes: number
@@ -109,7 +111,7 @@ export default function CadernoClient({
   const [saving, setSaving] = useState(false)
   const [gerando, setGerando] = useState(false)
   const [erroGerar, setErroGerar] = useState('')
-  const [form, setForm] = useState({ conteudo: '', livro_id: '', tags: '' })
+  const [form, setForm] = useState({ conteudo: '', livro_id: '', tags: '', publico: false })
 
   const [janela, setJanela] = useState<Janela>('ultima')
   const hoje = new Date().toISOString().slice(0, 10)
@@ -165,6 +167,7 @@ export default function CadernoClient({
         conteudo: form.conteudo.trim(),
         livro_id: form.livro_id || null,
         tags,
+        publico: form.publico,
       })
       .select('*, livros(titulo)')
       .single()
@@ -174,7 +177,7 @@ export default function CadernoClient({
     if (!error && data) {
       setPensamentos(prev => [data as Pensamento, ...prev])
       setModalOpen(false)
-      setForm({ conteudo: '', livro_id: '', tags: '' })
+      setForm({ conteudo: '', livro_id: '', tags: '', publico: false })
       startTransition(() => router.refresh())
     }
   }
@@ -183,6 +186,48 @@ export default function CadernoClient({
     const { error } = await supabase.from('pensamentos').delete().eq('id', id)
     if (!error) {
       setPensamentos(prev => prev.filter(pensamento => pensamento.id !== id))
+    }
+  }
+
+  async function resolverNomePublicador(novo: boolean): Promise<string | null> {
+    if (!novo) return null
+    const { data } = await supabase
+      .from('profiles')
+      .select('nome_clube')
+      .eq('id', userId)
+      .single()
+    return data?.nome_clube ?? null
+  }
+
+  async function togglePublicoProsa(id: string, atual: boolean) {
+    const novo = !atual
+    setProsas(prev => prev.map(p => p.id === id ? { ...p, publico: novo } : p))
+    setProsaAtiva(prev => prev?.id === id ? { ...prev, publico: novo } : prev)
+
+    const nome = await resolverNomePublicador(novo)
+    const { error } = await supabase
+      .from('prosas')
+      .update({ publico: novo, nome_publicador: nome })
+      .eq('id', id)
+
+    if (error) {
+      setProsas(prev => prev.map(p => p.id === id ? { ...p, publico: atual } : p))
+      setProsaAtiva(prev => prev?.id === id ? { ...prev, publico: atual } : prev)
+    }
+  }
+
+  async function togglePublicoPensamento(id: string, atual: boolean) {
+    const novo = !atual
+    setPensamentos(prev => prev.map(p => p.id === id ? { ...p, publico: novo } : p))
+
+    const nome = await resolverNomePublicador(novo)
+    const { error } = await supabase
+      .from('pensamentos')
+      .update({ publico: novo, nome_publicador: nome })
+      .eq('id', id)
+
+    if (error) {
+      setPensamentos(prev => prev.map(p => p.id === id ? { ...p, publico: atual } : p))
     }
   }
 
@@ -217,6 +262,7 @@ export default function CadernoClient({
         titulo: data.titulo,
         conteudo: data.prosa,
         frase: data.frase ?? null,
+        publico: false,
         fontes: data.fontes ?? null,
         created_at: data.created_at ?? new Date().toISOString(),
       }
@@ -357,6 +403,19 @@ export default function CadernoClient({
                               #{tag}
                             </span>
                           ))}
+                          <button
+                            type="button"
+                            onClick={() => togglePublicoPensamento(pensamento.id, pensamento.publico)}
+                            className={`flex items-center gap-1 text-xs transition-colors ${
+                              pensamento.publico
+                                ? 'text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                            title={pensamento.publico ? 'Publicado no Clube — clique para tornar privado' : 'Publicar no Clube'}
+                          >
+                            <Globe className="h-3 w-3" />
+                            {pensamento.publico ? 'No Clube' : 'Clube'}
+                          </button>
                           <span className="ml-auto text-xs text-muted-foreground">
                             {formatDate(pensamento.created_at)}
                           </span>
@@ -365,7 +424,7 @@ export default function CadernoClient({
                       <button
                         type="button"
                         onClick={() => deletarPensamento(pensamento.id)}
-                        className="p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                        className="p-2 text-muted-foreground opacity-60 transition-opacity hover:text-destructive lg:opacity-0 lg:group-hover:opacity-100"
                         aria-label="Excluir pensamento"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -435,7 +494,7 @@ export default function CadernoClient({
                       <button
                         type="button"
                         onClick={() => deletarObsLivro(livro.id)}
-                        className="p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                        className="p-2 text-muted-foreground opacity-60 transition-opacity hover:text-destructive lg:opacity-0 lg:group-hover:opacity-100"
                         aria-label="Excluir observação"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -511,9 +570,24 @@ export default function CadernoClient({
 
               {prosaAtiva && (
                 <div className="space-y-6 rounded-xl border border-border bg-card p-6 md:p-8">
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start justify-between gap-4">
                     <h2 className="text-lg font-semibold">{prosaAtiva.titulo}</h2>
-                    <span className="text-xs text-muted-foreground">{formatDate(prosaAtiva.created_at)}</span>
+                    <div className="flex flex-shrink-0 items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => togglePublicoProsa(prosaAtiva.id, prosaAtiva.publico)}
+                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
+                          prosaAtiva.publico
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
+                        }`}
+                        title={prosaAtiva.publico ? 'Publicado no Clube — clique para tornar privado' : 'Publicar no Clube'}
+                      >
+                        <Globe className="h-3 w-3" />
+                        {prosaAtiva.publico ? 'No Clube' : 'Publicar'}
+                      </button>
+                      <span className="text-xs text-muted-foreground">{formatDate(prosaAtiva.created_at)}</span>
+                    </div>
                   </div>
 
                   {prosaAtiva.frase && (
@@ -595,6 +669,28 @@ export default function CadernoClient({
                     placeholder="fé, política, arte..."
                     className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.publico}
+                  onClick={() => setForm(prev => ({ ...prev, publico: !prev.publico }))}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full transition-colors ${
+                    form.publico ? 'bg-primary' : 'bg-input'
+                  }`}
+                >
+                  <span className={`mt-0.5 inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    form.publico ? 'translate-x-4' : 'translate-x-0.5'
+                  }`} />
+                </button>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{form.publico ? 'Público no Clube' : 'Privado'}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {form.publico ? 'Visível para todos os membros' : 'Só você vê'}
+                  </p>
                 </div>
               </div>
             </div>

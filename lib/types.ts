@@ -34,6 +34,7 @@ export interface Citacao {
   texto: string
   pagina: number | null
   tags: string[] | null
+  publico: boolean
   created_at: string
   livros?: Pick<Livro, 'id' | 'titulo' | 'autor'>
 }
@@ -44,8 +45,12 @@ export interface Profile {
   name: string | null
   avatar_url: string | null
   anthropic_api_key: string | null
+  openai_api_key: string | null
+  gemini_api_key: string | null
+  ai_provider: string | null
   ai_perfil: string | null
   ai_instrucoes: string | null
+  nome_clube: string | null
 }
 
 export interface DashboardStats {

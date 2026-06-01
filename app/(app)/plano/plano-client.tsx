@@ -206,21 +206,61 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
     const { ano, mes, numero_mes } = proximoMes
     const titulo = `${MESES_PT[mes - 1]} ${ano}`
 
+    // captura o último mês antes de criar o novo
+    const planoAnterior = planos.length > 0 ? planos[planos.length - 1] : null
+
     const { data, error } = await supabase
       .from('planos_mensais')
       .insert({ user_id: userId, numero_mes, ano, mes, titulo, objetivo: novoObjetivo.trim() || null })
-      .select('*, plano_livros(*)')
+      .select('id')
       .single()
 
-    setCriandoMes(false)
-
     if (error) {
+      setCriandoMes(false)
       setErroCriar(error.message)
       return
     }
 
+    let novoPlanoLivros: PlanoLivro[] = []
+
+    if (data && planoAnterior) {
+      const naoLidos = planoAnterior.plano_livros.filter(
+        pl => pl.livros && pl.livros.status !== 'lido'
+      )
+
+      if (naoLidos.length > 0) {
+        const insercoes = naoLidos.map((pl, i) => ({
+          plano_id: data.id,
+          livro_id: pl.livros!.id,
+          papel: pl.papel,
+          ordem: i + 1,
+          user_id: userId,
+        }))
+
+        const { data: carregados } = await supabase
+          .from('plano_livros')
+          .insert(insercoes)
+          .select('id, papel, ordem, observacoes, livros(id, titulo, autor, status, nota, eixos(nome, cor))')
+
+        if (carregados) {
+          novoPlanoLivros = carregados.map(normalizePlanoLivro)
+        }
+      }
+    }
+
+    setCriandoMes(false)
+
     if (data) {
-      const novo = { ...data, plano_livros: [] } as Plano
+      const novo: Plano = {
+        id: data.id,
+        numero_mes,
+        ano,
+        mes,
+        titulo,
+        objetivo: novoObjetivo.trim() || null,
+        observacoes: null,
+        plano_livros: novoPlanoLivros,
+      }
       setPlanos(prev => [...prev, novo])
       setExpandido(novo.id)
       setShowCriarForm(false)
@@ -446,17 +486,17 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
               key={plano.id}
               id={`mes-${plano.id}`}
               ref={atual ? mesAtualRef : undefined}
-              className={`rounded-xl border bg-card transition-all ${
+              className={`overflow-hidden rounded-xl border bg-card transition-all ${
                 atual ? 'border-primary/50 ring-1 ring-primary/20' : 'border-border'
               }`}
             >
               <button
                 type="button"
-                className="flex w-full items-center gap-4 px-5 py-4 text-left"
+                className="flex w-full items-center gap-3 px-3 py-3 text-left sm:px-5 sm:py-4"
                 onClick={() => setExpandido(aberto ? null : plano.id)}
               >
                 <div
-                  className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                  className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
                     atual
                       ? 'bg-primary text-primary-foreground'
                       : passado && progresso === 100 && plano.plano_livros.length > 0
@@ -467,35 +507,29 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                   {passado && progresso === 100 && plano.plano_livros.length > 0 ? '✓' : plano.numero_mes}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium">
-                      {plano.titulo}
-                    </span>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-sm font-medium">{plano.titulo}</span>
                     {atual && (
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                        Mês atual
+                      <span className="flex-shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                        Atual
                       </span>
                     )}
-                    <span className="text-xs text-muted-foreground">
-                      {livrosOrdenados.length} livro{livrosOrdenados.length !== 1 ? 's' : ''}
-                    </span>
                   </div>
-                  {plano.objetivo && (
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{plano.objetivo}</p>
-                  )}
+                  <p className="truncate text-xs text-muted-foreground">
+                    {livrosOrdenados.length} livro{livrosOrdenados.length !== 1 ? 's' : ''}
+                    {plano.objetivo ? ` · ${plano.objetivo}` : ''}
+                  </p>
                 </div>
-                <div className="flex flex-shrink-0 items-center gap-3">
-                  <div className="hidden items-center gap-2 sm:flex">
-                    <div className="h-1.5 w-20 overflow-hidden rounded-full bg-secondary">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          progresso === 100 ? 'bg-green-500' : 'bg-primary'
-                        }`}
-                        style={{ width: `${progresso}%` }}
-                      />
-                    </div>
-                    <span className="w-8 text-xs text-muted-foreground">{progresso}%</span>
+                <div className="flex flex-shrink-0 items-center gap-1.5">
+                  <div className="hidden h-1.5 w-14 overflow-hidden rounded-full bg-secondary sm:block">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        progresso === 100 ? 'bg-green-500' : 'bg-primary'
+                      }`}
+                      style={{ width: `${progresso}%` }}
+                    />
                   </div>
+                  <span className="w-8 text-right text-xs tabular-nums text-muted-foreground">{progresso}%</span>
                   {aberto ? (
                     <ChevronUp className="h-4 w-4 text-muted-foreground" />
                   ) : (
@@ -505,7 +539,7 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
               </button>
 
               {aberto && (
-                <div className="space-y-4 border-t border-border px-5 pb-5 pt-4">
+                <div className="space-y-4 border-t border-border px-3 pb-4 pt-3 sm:px-5 sm:pb-5 sm:pt-4">
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <div>
                       <label className="mb-1 block text-xs font-medium text-muted-foreground">Título do mês</label>
@@ -539,7 +573,7 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                       return (
                         <div
                           key={planoLivro.id}
-                          className={`group flex items-start gap-3 rounded-lg p-3 transition-colors ${
+                          className={`group flex items-center gap-3 rounded-lg p-3 transition-colors ${
                             lido ? 'bg-green-50' : 'bg-secondary/30'
                           }`}
                         >
@@ -547,7 +581,7 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                             type="button"
                             onClick={() => toggleStatus(planoLivro)}
                             disabled={carregando}
-                            className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                            className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border-2 transition-colors ${
                               lido
                                 ? 'border-green-500 bg-green-500 text-white'
                                 : 'border-border hover:border-primary'
@@ -555,22 +589,22 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                             aria-label={lido ? 'Marcar como não lido' : 'Marcar como lido'}
                           >
                             {carregando ? (
-                              <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
+                              <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
                             ) : lido ? (
-                              <Check className="h-3 w-3" />
+                              <Check className="h-3.5 w-3.5" />
                             ) : null}
                           </button>
                           <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex min-w-0 items-center gap-1.5">
                               <span
-                                className={`text-sm font-medium ${
+                                className={`truncate text-sm font-medium ${
                                   lido ? 'text-muted-foreground line-through' : ''
                                 }`}
                               >
                                 {planoLivro.livros.titulo}
                               </span>
                               <span
-                                className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                                className={`flex-shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
                                   PAPEL_COR[planoLivro.papel] ?? 'bg-slate-100 text-slate-600'
                                 }`}
                               >
@@ -578,12 +612,12 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                               </span>
                             </div>
                             {planoLivro.livros.autor && (
-                              <p className="mt-0.5 text-xs text-muted-foreground">{planoLivro.livros.autor}</p>
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground">{planoLivro.livros.autor}</p>
                             )}
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex flex-shrink-0 items-center gap-1">
                             <span
-                              className={`rounded-full px-2 py-0.5 text-xs ${
+                              className={`hidden rounded-full px-2 py-0.5 text-xs sm:inline-flex ${
                                 STATUS_CONFIG[planoLivro.livros.status]?.className ?? ''
                               }`}
                             >
@@ -592,10 +626,10 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                             <button
                               type="button"
                               onClick={() => removerLivroDoMes(planoLivro.id, plano.id)}
-                              className="p-1 text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
+                              className="p-2 text-muted-foreground opacity-60 transition-all hover:text-destructive lg:opacity-0 lg:group-hover:opacity-100"
                               aria-label="Remover livro do mês"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
                         </div>
@@ -611,7 +645,7 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                       setNovoAutor('')
                       setErroModal('')
                     }}
-                    className="flex items-center gap-2 text-sm text-primary transition-colors hover:text-primary/80"
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-primary/40 py-2.5 text-sm text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto sm:justify-start sm:border-none sm:py-0 sm:hover:bg-transparent"
                   >
                     <Plus className="h-4 w-4" /> Adicionar livro
                   </button>
@@ -688,10 +722,10 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
             if (event.target === event.currentTarget) fecharModal()
           }}
         >
-          <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-background p-6 shadow-xl">
+          <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-background p-4 shadow-xl sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Adicionar livro</h2>
-              <button type="button" onClick={fecharModal} aria-label="Fechar">
+              <button type="button" onClick={fecharModal} aria-label="Fechar" className="rounded-md p-1.5 transition-colors hover:bg-secondary">
                 <X className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
@@ -761,7 +795,7 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
               {busca.trim() && !livrosFiltrados.some(l => l.titulo.toLowerCase() === busca.toLowerCase()) && (
                 <div className="space-y-2 border-t border-border pt-3">
                   <p className="text-xs text-muted-foreground">Não está na biblioteca? Adicione agora:</p>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <input
                       type="text"
                       value={novoAutor}
@@ -773,9 +807,9 @@ export default function PlanoClient({ userId, planos: initial, livrosBiblioteca 
                       type="button"
                       onClick={() => adicionarLivroNovo(modalPlanoId)}
                       disabled={adicionando}
-                      className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                      className="rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 sm:py-2"
                     >
-                      {adicionando ? '...' : 'Adicionar'}
+                      {adicionando ? 'Adicionando...' : 'Adicionar livro'}
                     </button>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -874,7 +908,7 @@ function EntradaObsField({
         value={val}
         onChange={handleChange}
         placeholder="Anotação, reflexão ou meta..."
-        className="min-h-16 w-full resize rounded-md border border-border bg-background px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        className="min-h-16 w-full resize-y rounded-md border border-border bg-background px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
       />
       {saved && (
         <span className="absolute bottom-2 right-8 flex items-center gap-1 text-xs text-green-500">
@@ -884,7 +918,7 @@ function EntradaObsField({
       <button
         type="button"
         onClick={onDelete}
-        className="absolute right-2 top-2 p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+        className="absolute right-2 top-2 p-2 text-muted-foreground opacity-60 transition-opacity hover:text-destructive lg:opacity-0 lg:group-hover:opacity-100"
         aria-label="Remover anotação"
       >
         <Trash2 className="h-3 w-3" />

@@ -10,7 +10,7 @@ export default async function ConfiguracoesPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('anthropic_api_key, ai_perfil, ai_instrucoes')
+    .select('*')
     .eq('id', user.id)
     .single()
 
@@ -18,8 +18,12 @@ export default async function ConfiguracoesPage() {
     <ConfiguracoesClient
       userId={user.id}
       anthropicApiKey={profile?.anthropic_api_key ?? null}
+      openaiApiKey={profile?.openai_api_key ?? null}
+      geminiApiKey={profile?.gemini_api_key ?? null}
+      aiProvider={profile?.ai_provider ?? null}
       aiPerfil={profile?.ai_perfil ?? null}
       aiInstrucoes={profile?.ai_instrucoes ?? null}
+      nomeClube={profile?.nome_clube ?? null}
     />
   )
 }

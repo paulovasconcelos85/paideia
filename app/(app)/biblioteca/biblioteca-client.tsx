@@ -217,7 +217,7 @@ export default function BibliotecaClient({ livros: initial, eixos }: Props) {
             placeholder="Buscar título ou autor..."
             value={busca}
             onChange={event => setBusca(event.target.value)}
-            className="w-56 rounded-md border border-border bg-background py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full sm:w-56 rounded-md border border-border bg-background py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
 
@@ -405,7 +405,7 @@ export default function BibliotecaClient({ livros: initial, eixos }: Props) {
                           <button
                             type="button"
                             onClick={() => openEdit(livro)}
-                            className="text-xs text-primary opacity-70 transition-opacity hover:opacity-100"
+                            className="rounded px-2 py-1 text-xs text-primary transition-colors hover:bg-primary/10 active:bg-primary/20"
                           >
                             editar
                           </button>
@@ -472,7 +472,7 @@ export default function BibliotecaClient({ livros: initial, eixos }: Props) {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Eixo</label>
                   <select
