@@ -38,36 +38,17 @@ const TIPO_CONFIG = {
   prosa:      { icon: Sparkles,  label: 'Prosa'      },
 }
 
-type ReacaoItem = { emoji: string; count: number; minha: boolean }
-type ReacoesMap = Map<string, ReacaoItem[]>
+type ReacaoItem = PostFeed['reacoes'][number]
 
-function buildKey(tipo: string, id: string) { return `${tipo}-${id}` }
-
-function buildInitialMap(feed: PostFeed[]): ReacoesMap {
-  const map = new Map<string, ReacaoItem[]>()
-  for (const post of feed) {
-    map.set(buildKey(post.tipo, post.id), post.reacoes)
-  }
-  return map
-}
-
-function applyToggle(map: ReacoesMap, tipo: string, id: string, emoji: string): ReacoesMap {
-  const next = new Map(map)
-  const key = buildKey(tipo, id)
-  const atual = next.get(key) ?? []
-  const idx = atual.findIndex(r => r.emoji === emoji)
-
+function toggleReacaoLocal(reacoes: ReacaoItem[], emoji: string): ReacaoItem[] {
+  const idx = reacoes.findIndex(r => r.emoji === emoji)
   if (idx >= 0) {
-    const item = atual[idx]
-    const novoCount = item.count - 1
-    const updated = novoCount > 0
-      ? atual.map((r, i) => i === idx ? { ...r, count: novoCount, minha: false } : r)
-      : atual.filter((_, i) => i !== idx)
-    next.set(key, updated)
-  } else {
-    next.set(key, [...atual, { emoji, count: 1, minha: true }])
+    const novoCount = reacoes[idx].count - 1
+    return novoCount > 0
+      ? reacoes.map((r, i) => i === idx ? { ...r, count: novoCount, minha: false } : r)
+      : reacoes.filter((_, i) => i !== idx)
   }
-  return next
+  return [...reacoes, { emoji, count: 1, minha: true }]
 }
 
 interface Props {
@@ -78,15 +59,19 @@ export default function ClubeClient({ feed }: Props) {
   const [tagAtiva, setTagAtiva] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const [reacoesMap, addOptimisticReacao] = useOptimistic(
-    buildInitialMap(feed),
-    (state: ReacoesMap, { tipo, id, emoji }: { tipo: string; id: string; emoji: string }) =>
-      applyToggle(state, tipo, id, emoji)
+  const [optimisticFeed, addOptimistic] = useOptimistic(
+    feed,
+    (state: PostFeed[], { tipo, id, emoji }: { tipo: string; id: string; emoji: string }) =>
+      state.map(post =>
+        post.tipo === tipo && post.id === id
+          ? { ...post, reacoes: toggleReacaoLocal(post.reacoes, emoji) }
+          : post
+      )
   )
 
   function handleReacao(tipo: PostTipo, id: string, emoji: Emoji) {
     startTransition(async () => {
-      addOptimisticReacao({ tipo, id, emoji })
+      addOptimistic({ tipo, id, emoji })
       await toggleReacao(tipo, id, emoji)
     })
   }
@@ -98,9 +83,9 @@ export default function ClubeClient({ feed }: Props) {
   }, [feed])
 
   const feedFiltrado = useMemo(() => {
-    if (!tagAtiva) return feed
-    return feed.filter(p => p.tags?.includes(tagAtiva))
-  }, [feed, tagAtiva])
+    if (!tagAtiva) return optimisticFeed
+    return optimisticFeed.filter(p => p.tags?.includes(tagAtiva))
+  }, [optimisticFeed, tagAtiva])
 
   return (
     <div className="space-y-5">
@@ -155,7 +140,6 @@ export default function ClubeClient({ feed }: Props) {
             const cor = post.isMine ? COR_MINHA : CORES[post.colorIndex]
             const { icon: TipoIcon, label: tipoLabel } = TIPO_CONFIG[post.tipo]
             const autor = post.nome_publicador ?? (post.isMine ? 'Você' : 'Anônimo')
-            const reacoes = reacoesMap.get(buildKey(post.tipo, post.id)) ?? []
 
             return (
               <div key={`${post.tipo}-${post.id}`} className={`flex ${post.isMine ? 'justify-end' : 'justify-start'}`}>
@@ -229,9 +213,8 @@ export default function ClubeClient({ feed }: Props) {
 
                     {/* Reações */}
                     <div className={`mt-3 flex flex-wrap gap-1 ${post.isMine ? 'justify-end' : 'justify-start'}`}>
-                      {/* Botões para emojis sem reação (ícones discretos) */}
                       {EMOJIS.map(emoji => {
-                        const reacao = reacoes.find(r => r.emoji === emoji)
+                        const reacao = post.reacoes.find(r => r.emoji === emoji)
                         return reacao ? (
                           <button
                             key={emoji}
