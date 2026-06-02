@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useOptimistic, useTransition, useMemo, useState } from 'react'
 import { BookOpen, Lightbulb, Quote, Sparkles, Users } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { toggleReacao, EMOJIS, type PostTipo, type Emoji } from './actions'
 
 export interface PostFeed {
   id: string
@@ -17,6 +18,7 @@ export interface PostFeed {
   created_at: string
   isMine: boolean
   colorIndex: number
+  reacoes: { emoji: string; count: number; minha: boolean }[]
 }
 
 // Cores sóbrias para usuários diferentes — índice 0-5
@@ -36,12 +38,58 @@ const TIPO_CONFIG = {
   prosa:      { icon: Sparkles,  label: 'Prosa'      },
 }
 
+type ReacaoItem = { emoji: string; count: number; minha: boolean }
+type ReacoesMap = Map<string, ReacaoItem[]>
+
+function buildKey(tipo: string, id: string) { return `${tipo}-${id}` }
+
+function buildInitialMap(feed: PostFeed[]): ReacoesMap {
+  const map = new Map<string, ReacaoItem[]>()
+  for (const post of feed) {
+    map.set(buildKey(post.tipo, post.id), post.reacoes)
+  }
+  return map
+}
+
+function applyToggle(map: ReacoesMap, tipo: string, id: string, emoji: string): ReacoesMap {
+  const next = new Map(map)
+  const key = buildKey(tipo, id)
+  const atual = next.get(key) ?? []
+  const idx = atual.findIndex(r => r.emoji === emoji)
+
+  if (idx >= 0) {
+    const item = atual[idx]
+    const novoCount = item.count - 1
+    const updated = novoCount > 0
+      ? atual.map((r, i) => i === idx ? { ...r, count: novoCount, minha: false } : r)
+      : atual.filter((_, i) => i !== idx)
+    next.set(key, updated)
+  } else {
+    next.set(key, [...atual, { emoji, count: 1, minha: true }])
+  }
+  return next
+}
+
 interface Props {
   feed: PostFeed[]
 }
 
 export default function ClubeClient({ feed }: Props) {
   const [tagAtiva, setTagAtiva] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+
+  const [reacoesMap, addOptimisticReacao] = useOptimistic(
+    buildInitialMap(feed),
+    (state: ReacoesMap, { tipo, id, emoji }: { tipo: string; id: string; emoji: string }) =>
+      applyToggle(state, tipo, id, emoji)
+  )
+
+  function handleReacao(tipo: PostTipo, id: string, emoji: Emoji) {
+    startTransition(async () => {
+      addOptimisticReacao({ tipo, id, emoji })
+      await toggleReacao(tipo, id, emoji)
+    })
+  }
 
   const todasTags = useMemo(() => {
     const set = new Set<string>()
@@ -107,6 +155,7 @@ export default function ClubeClient({ feed }: Props) {
             const cor = post.isMine ? COR_MINHA : CORES[post.colorIndex]
             const { icon: TipoIcon, label: tipoLabel } = TIPO_CONFIG[post.tipo]
             const autor = post.nome_publicador ?? (post.isMine ? 'Você' : 'Anônimo')
+            const reacoes = reacoesMap.get(buildKey(post.tipo, post.id)) ?? []
 
             return (
               <div key={`${post.tipo}-${post.id}`} className={`flex ${post.isMine ? 'justify-end' : 'justify-start'}`}>
@@ -177,6 +226,40 @@ export default function ClubeClient({ feed }: Props) {
                         </p>
                       </div>
                     )}
+
+                    {/* Reações */}
+                    <div className={`mt-3 flex flex-wrap gap-1 ${post.isMine ? 'justify-end' : 'justify-start'}`}>
+                      {/* Botões para emojis sem reação (ícones discretos) */}
+                      {EMOJIS.map(emoji => {
+                        const reacao = reacoes.find(r => r.emoji === emoji)
+                        return reacao ? (
+                          <button
+                            key={emoji}
+                            type="button"
+                            disabled={isPending}
+                            onClick={() => handleReacao(post.tipo as PostTipo, post.id, emoji)}
+                            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                              reacao.minha
+                                ? 'border-primary/40 bg-primary/10 text-primary font-medium'
+                                : 'border-black/10 bg-white/60 text-foreground/70 hover:border-black/20 hover:bg-white'
+                            }`}
+                          >
+                            <span>{emoji}</span>
+                            <span>{reacao.count}</span>
+                          </button>
+                        ) : (
+                          <button
+                            key={emoji}
+                            type="button"
+                            disabled={isPending}
+                            onClick={() => handleReacao(post.tipo as PostTipo, post.id, emoji)}
+                            className="rounded-full border border-transparent px-2 py-0.5 text-xs text-foreground/20 transition-colors hover:border-black/10 hover:bg-white/60 hover:text-foreground/60"
+                          >
+                            {emoji}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
 
                   {/* Autor + data */}

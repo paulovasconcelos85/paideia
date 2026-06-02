@@ -34,6 +34,40 @@ export default async function ClubePage() {
   ].filter(Boolean))]
   const corMap = new Map(todosIds.map((id, i) => [id, i % 6]))
 
+  // Busca reações de todos os posts em uma única query
+  const allIds = [
+    ...(pensamentos ?? []).map(p => p.id),
+    ...(citacoes ?? []).map(c => c.id),
+    ...(prosas ?? []).map(p => p.id),
+  ]
+
+  type ReacaoRow = { post_tipo: string; post_id: string; emoji: string; user_id: string }
+  const reacaoMap = new Map<string, ReacaoRow[]>()
+
+  if (allIds.length) {
+    const { data: reacoesData } = await supabase
+      .from('clube_reacoes')
+      .select('post_tipo, post_id, emoji, user_id')
+      .in('post_id', allIds)
+
+    for (const r of reacoesData ?? []) {
+      const key = `${r.post_tipo}-${r.post_id}`
+      if (!reacaoMap.has(key)) reacaoMap.set(key, [])
+      reacaoMap.get(key)!.push(r)
+    }
+  }
+
+  function buildReacoes(tipo: string, id: string): PostFeed['reacoes'] {
+    const rows = reacaoMap.get(`${tipo}-${id}`) ?? []
+    const counts: Record<string, number> = {}
+    const minhas = new Set<string>()
+    for (const r of rows) {
+      counts[r.emoji] = (counts[r.emoji] ?? 0) + 1
+      if (r.user_id === user?.id) minhas.add(r.emoji)
+    }
+    return Object.entries(counts).map(([emoji, count]) => ({ emoji, count, minha: minhas.has(emoji) }))
+  }
+
   function mapear<T extends { id: string; user_id: string; created_at: string; nome_publicador: string | null }>(
     items: T[],
     tipo: PostFeed['tipo'],
@@ -52,6 +86,7 @@ export default async function ClubePage() {
       created_at: item.created_at,
       isMine: item.user_id === user?.id,
       colorIndex: corMap.get(item.user_id) ?? 0,
+      reacoes: buildReacoes(tipo, item.id),
       ...extra(item),
     }))
   }
