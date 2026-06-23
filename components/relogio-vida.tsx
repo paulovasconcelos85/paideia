@@ -44,22 +44,23 @@ function calcularTempo(nascimento: Date): Tempo {
 }
 
 export default function RelogioVida({ dataNascimento }: Props) {
-  const nascimento = new Date(dataNascimento)
-  const [tempo, setTempo] = useState<Tempo>(() => calcularTempo(nascimento))
+  const [tempo, setTempo] = useState<Tempo | null>(null)
 
   useEffect(() => {
+    const nascimento = new Date(dataNascimento)
+    setTempo(calcularTempo(nascimento))
     const id = setInterval(() => setTempo(calcularTempo(nascimento)), 1000)
     return () => clearInterval(id)
   }, [dataNascimento])
 
-  const unidades = [
+  const unidades = tempo ? [
     { label: 'anos', valor: tempo.anos },
     { label: 'meses', valor: tempo.meses },
     { label: 'dias', valor: tempo.dias },
     { label: 'horas', valor: tempo.horas },
     { label: 'min', valor: tempo.minutos },
     { label: 'seg', valor: tempo.segundos },
-  ]
+  ] : []
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
@@ -69,19 +70,26 @@ export default function RelogioVida({ dataNascimento }: Props) {
       </div>
 
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-        {unidades.map(({ label, valor }) => (
+        {tempo ? unidades.map(({ label, valor }) => (
           <div key={label} className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
             <span className="text-xl font-semibold tabular-nums leading-none">
               {String(valor).padStart(2, '0')}
             </span>
             <span className="text-xs text-muted-foreground mt-1">{label}</span>
           </div>
+        )) : Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2 animate-pulse">
+            <span className="text-xl font-semibold tabular-nums leading-none text-transparent">00</span>
+            <span className="text-xs text-transparent mt-1">--</span>
+          </div>
         ))}
       </div>
 
-      <p className="text-xs text-muted-foreground text-center">
-        {tempo.totalHoras.toLocaleString('pt-BR')} horas vividas
-      </p>
+      {tempo && (
+        <p className="text-xs text-muted-foreground text-center">
+          {tempo.totalHoras.toLocaleString('pt-BR')} horas vividas
+        </p>
+      )}
     </div>
   )
 }
