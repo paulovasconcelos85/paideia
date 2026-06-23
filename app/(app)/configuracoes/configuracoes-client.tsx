@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, type ChangeEvent } from 'react'
-import { Check, Eye, EyeOff, ExternalLink, Key, Sparkles, User, Users } from 'lucide-react'
+import { Check, Eye, EyeOff, ExternalLink, Key, Sparkles, User, Users, Clock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const PERFIS_RAPIDOS = [
@@ -34,9 +34,10 @@ interface Props {
   aiPerfil: string | null
   aiInstrucoes: string | null
   nomeClube: string | null
+  dataNascimento: string | null
 }
 
-export default function ConfiguracoesClient({ userId, anthropicApiKey, openaiApiKey, geminiApiKey, aiProvider, aiPerfil, aiInstrucoes, nomeClube }: Props) {
+export default function ConfiguracoesClient({ userId, anthropicApiKey, openaiApiKey, geminiApiKey, aiProvider, aiPerfil, aiInstrucoes, nomeClube, dataNascimento }: Props) {
   const supabase = createClient()
 
   const [provider, setProvider] = useState<ProviderId>((aiProvider as ProviderId) ?? 'anthropic')
@@ -64,6 +65,18 @@ export default function ConfiguracoesClient({ userId, anthropicApiKey, openaiApi
 
   const perfilTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const instrucoesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // data_nascimento: guardamos como string datetime-local (YYYY-MM-DDTHH:mm)
+  function toLocalInput(iso: string | null): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  const [nascimento, setNascimento] = useState(toLocalInput(dataNascimento))
+  const [nascimentoSalvo, setNascimentoSalvo] = useState(false)
+  const [nascimentoErro, setNascimentoErro] = useState('')
+  const nascimentoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const colKey: Record<ProviderId, string> = {
     anthropic: 'anthropic_api_key',
@@ -161,6 +174,26 @@ export default function ConfiguracoesClient({ userId, anthropicApiKey, openaiApi
       } else {
         setPerfilSalvo(true)
         setTimeout(() => setPerfilSalvo(false), 2000)
+      }
+    }, 800)
+  }
+
+  function handleNascimentoChange(e: ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value
+    setNascimento(value)
+    setNascimentoErro('')
+    if (nascimentoTimer.current) clearTimeout(nascimentoTimer.current)
+    nascimentoTimer.current = setTimeout(async () => {
+      const iso = value ? new Date(value).toISOString() : null
+      const { error } = await supabase
+        .from('profiles')
+        .update({ data_nascimento: iso })
+        .eq('id', userId)
+      if (error) {
+        setNascimentoErro(error.message)
+      } else {
+        setNascimentoSalvo(true)
+        setTimeout(() => setNascimentoSalvo(false), 2000)
       }
     }, 800)
   }
@@ -360,6 +393,33 @@ export default function ConfiguracoesClient({ userId, anthropicApiKey, openaiApi
             className="w-full resize rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
           {perfilErro && <p className="text-xs text-destructive">{perfilErro}</p>}
+        </div>
+      </section>
+
+      {/* Relógio da vida */}
+      <section className="space-y-4 rounded-xl border border-border bg-card p-6">
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 text-muted-foreground" />
+          <h2 className="font-medium">Relógio da vida</h2>
+          {nascimentoSalvo && (
+            <span className="ml-auto flex items-center gap-1 text-xs text-green-600">
+              <Check className="h-3 w-3" /> Salvo
+            </span>
+          )}
+        </div>
+
+        <p className="text-sm text-muted-foreground">
+          Data e hora do seu nascimento. Usado para exibir o relógio da vida no dashboard.
+        </p>
+
+        <div className="space-y-1.5">
+          <input
+            type="datetime-local"
+            value={nascimento}
+            onChange={handleNascimentoChange}
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          {nascimentoErro && <p className="text-xs text-destructive">{nascimentoErro}</p>}
         </div>
       </section>
 

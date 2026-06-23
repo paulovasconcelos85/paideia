@@ -24,6 +24,7 @@ export default async function ConfiguracoesPage() {
       aiPerfil={profile?.ai_perfil ?? null}
       aiInstrucoes={profile?.ai_instrucoes ?? null}
       nomeClube={profile?.nome_clube ?? null}
+      dataNascimento={profile?.data_nascimento ?? null}
     />
   )
 }

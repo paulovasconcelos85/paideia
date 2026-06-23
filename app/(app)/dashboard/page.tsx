@@ -2,14 +2,16 @@ import { createClient } from '@/lib/supabase/server'
 import type { DashboardStats } from '@/lib/types'
 import { BookOpen, BookMarked, ShoppingCart, Star } from 'lucide-react'
 import EixoProgressCard from '@/components/eixo-progress-card'
+import RelogioVida from '@/components/relogio-vida'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: livros }, { data: eixos }] = await Promise.all([
+  const [{ data: livros }, { data: eixos }, { data: profile }] = await Promise.all([
     supabase.from('livros').select('status, nota, eixo_id').eq('user_id', user!.id),
     supabase.from('eixos').select('*').order('id'),
+    supabase.from('profiles').select('data_nascimento').eq('id', user!.id).single(),
   ])
 
   const lidos = livros?.filter(l => l.status === 'lido') ?? []
@@ -53,6 +55,11 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Relógio da vida */}
+      {profile?.data_nascimento && (
+        <RelogioVida dataNascimento={profile.data_nascimento} />
+      )}
 
       {/* Progresso por eixo */}
       <div>
