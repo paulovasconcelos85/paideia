@@ -78,7 +78,7 @@ export default function ClubeClient({ feed }: Props) {
 
   const todasTags = useMemo(() => {
     const set = new Set<string>()
-    feed.forEach(p => p.tags?.forEach(t => set.add(t)))
+    feed.forEach(p => Array.isArray(p.tags) && p.tags.forEach(t => set.add(t)))
     return Array.from(set).sort()
   }, [feed])
 
@@ -158,7 +158,7 @@ export default function ClubeClient({ feed }: Props) {
                     {post.tipo === 'pensamento' && (
                       <div className="space-y-2.5">
                         <p className="text-sm leading-relaxed">{post.conteudo}</p>
-                        {post.tags && post.tags.length > 0 && (
+                        {Array.isArray(post.tags) && post.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {post.tags.map(tag => (
                               <button

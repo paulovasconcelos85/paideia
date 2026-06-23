@@ -98,7 +98,7 @@ export default async function ClubePage() {
   const feed: PostFeed[] = [
     ...mapear(pensamentos as PensamentoRow[] ?? [], 'pensamento', item => ({
       conteudo: item.conteudo,
-      tags: item.tags,
+      tags: Array.isArray(item.tags) ? item.tags : null,
       livro: Array.isArray(item.livros) ? item.livros[0] ?? null : item.livros,
     })),
     ...mapear(citacoes as CitacaoRow[] ?? [], 'citacao', item => ({
