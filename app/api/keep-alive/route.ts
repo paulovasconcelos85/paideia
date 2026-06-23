@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
+// mantém o banco do Supabase ativo
 export const runtime = 'edge'
 
 export async function GET() {
