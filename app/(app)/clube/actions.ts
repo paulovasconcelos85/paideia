@@ -3,9 +3,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+import type { Emoji } from './constants'
+
 export type PostTipo = 'pensamento' | 'citacao' | 'prosa'
-export const EMOJIS = ['👍', '✝️', '🔥', '💡'] as const
-export type Emoji = typeof EMOJIS[number]
 
 export async function toggleReacao(postTipo: PostTipo, postId: string, emoji: Emoji) {
   const supabase = await createClient()

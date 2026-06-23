@@ -3,7 +3,8 @@
 import { useOptimistic, useTransition, useMemo, useState } from 'react'
 import { BookOpen, Lightbulb, Quote, Sparkles, Users } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { toggleReacao, EMOJIS, type PostTipo, type Emoji } from './actions'
+import { toggleReacao, type PostTipo } from './actions'
+import { EMOJIS, type Emoji } from './constants'
 
 export interface PostFeed {
   id: string
