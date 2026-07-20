@@ -1,6 +1,7 @@
 'use client'
 
 import { useOptimistic, useTransition, useMemo, useState } from 'react'
+import Image from 'next/image'
 import { BookOpen, Lightbulb, Quote, Sparkles, Users } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { toggleReacao, type PostTipo } from './actions'
@@ -14,6 +15,7 @@ export interface PostFeed {
   titulo?: string
   tags?: string[] | null
   pagina?: number | null
+  imagem_url?: string | null
   livro?: { titulo: string; autor: string | null } | null
   nome_publicador: string | null
   created_at: string
@@ -159,6 +161,17 @@ export default function ClubeClient({ feed }: Props) {
                     {post.tipo === 'pensamento' && (
                       <div className="space-y-2.5">
                         <p className="text-sm leading-relaxed">{post.conteudo}</p>
+                        {post.imagem_url && (
+                          <a href={post.imagem_url} target="_blank" rel="noopener noreferrer" className="block">
+                            <Image
+                              src={post.imagem_url}
+                              alt=""
+                              width={480}
+                              height={320}
+                              className="max-h-72 w-auto rounded-lg border border-black/5 object-cover"
+                            />
+                          </a>
+                        )}
                         {Array.isArray(post.tags) && post.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {post.tags.map(tag => (

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { BookOpen, CalendarDays, Globe, Lightbulb, Plus, Quote, Sparkles, Trash2, X } from 'lucide-react'
+import Image from 'next/image'
+import { BookOpen, CalendarDays, Globe, ImagePlus, Lightbulb, Plus, Quote, Sparkles, Trash2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
 
@@ -11,6 +12,7 @@ interface Pensamento {
   conteudo: string
   tags: string[] | null
   publico: boolean
+  imagem_url: string | null
   created_at: string
   livros?: { titulo: string } | null
 }
@@ -111,7 +113,10 @@ export default function CadernoClient({
   const [saving, setSaving] = useState(false)
   const [gerando, setGerando] = useState(false)
   const [erroGerar, setErroGerar] = useState('')
-  const [form, setForm] = useState({ conteudo: '', livro_id: '', tags: '', publico: false })
+  const [form, setForm] = useState({ conteudo: '', livro_id: '', tags: '', publico: false, imagem_url: '' })
+  const [enviandoImagem, setEnviandoImagem] = useState(false)
+  const [erroImagem, setErroImagem] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [janela, setJanela] = useState<Janela>('ultima')
   const hoje = new Date().toISOString().slice(0, 10)
@@ -152,6 +157,47 @@ export default function CadernoClient({
   )
   const totalFragmentos = pensamentos.length + citacoes.length + livrosObservados.length + totalEntradasPlano
 
+  async function uploadImagem(file: File) {
+    if (!file.type.startsWith('image/')) {
+      setErroImagem('Apenas imagens são permitidas.')
+      return
+    }
+
+    setErroImagem('')
+    setEnviandoImagem(true)
+
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `${userId}/${crypto.randomUUID()}.${ext}`
+
+    const { error } = await supabase.storage.from('fragmentos').upload(path, file)
+
+    if (error) {
+      setErroImagem('Erro ao enviar imagem.')
+      setEnviandoImagem(false)
+      return
+    }
+
+    const { data } = supabase.storage.from('fragmentos').getPublicUrl(path)
+    setForm(prev => ({ ...prev, imagem_url: data.publicUrl }))
+    setEnviandoImagem(false)
+  }
+
+  function handlePasteImagem(event: React.ClipboardEvent) {
+    const item = Array.from(event.clipboardData.items).find(i => i.type.startsWith('image/'))
+    if (!item) return
+    const file = item.getAsFile()
+    if (!file) return
+    event.preventDefault()
+    uploadImagem(file)
+  }
+
+  function handleDropImagem(event: React.DragEvent) {
+    const file = Array.from(event.dataTransfer.files).find(f => f.type.startsWith('image/'))
+    if (!file) return
+    event.preventDefault()
+    uploadImagem(file)
+  }
+
   async function salvarPensamento() {
     if (!form.conteudo.trim()) return
 
@@ -168,6 +214,7 @@ export default function CadernoClient({
         livro_id: form.livro_id || null,
         tags,
         publico: form.publico,
+        imagem_url: form.imagem_url || null,
       })
       .select('*, livros(titulo)')
       .single()
@@ -177,7 +224,7 @@ export default function CadernoClient({
     if (!error && data) {
       setPensamentos(prev => [data as Pensamento, ...prev])
       setModalOpen(false)
-      setForm({ conteudo: '', livro_id: '', tags: '', publico: false })
+      setForm({ conteudo: '', livro_id: '', tags: '', publico: false, imagem_url: '' })
       startTransition(() => router.refresh())
     }
   }
@@ -392,6 +439,17 @@ export default function CadernoClient({
                     <div className="flex items-start gap-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm leading-relaxed">{pensamento.conteudo}</p>
+                        {pensamento.imagem_url && (
+                          <a href={pensamento.imagem_url} target="_blank" rel="noopener noreferrer" className="mt-2 block">
+                            <Image
+                              src={pensamento.imagem_url}
+                              alt=""
+                              width={480}
+                              height={320}
+                              className="max-h-64 w-auto rounded-md border border-border object-cover"
+                            />
+                          </a>
+                        )}
                         <div className="mt-2 flex flex-wrap items-center gap-3">
                           {pensamento.livros?.titulo && (
                             <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -638,10 +696,58 @@ export default function CadernoClient({
                   rows={4}
                   value={form.conteudo}
                   onChange={event => setForm(prev => ({ ...prev, conteudo: event.target.value }))}
-                  placeholder="Uma ideia, reflexão, conexão entre livros, observação..."
+                  onPaste={handlePasteImagem}
+                  onDrop={handleDropImagem}
+                  onDragOver={event => event.preventDefault()}
+                  placeholder="Uma ideia, reflexão, conexão entre livros, observação... (cole ou arraste uma foto aqui)"
                   className="min-h-32 w-full resize rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   autoFocus
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Foto</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={event => {
+                    const file = event.target.files?.[0]
+                    if (file) uploadImagem(file)
+                    event.target.value = ''
+                  }}
+                />
+                {form.imagem_url ? (
+                  <div className="relative w-fit">
+                    <Image
+                      src={form.imagem_url}
+                      alt=""
+                      width={200}
+                      height={140}
+                      className="max-h-40 w-auto rounded-md border border-border object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm(prev => ({ ...prev, imagem_url: '' }))}
+                      aria-label="Remover foto"
+                      className="absolute -right-2 -top-2 rounded-full bg-background p-1 text-muted-foreground shadow ring-1 ring-border hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={enviandoImagem}
+                    className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+                  >
+                    <ImagePlus className="h-4 w-4" />
+                    {enviandoImagem ? 'Enviando...' : 'Carregar foto (ou cole/arraste no texto)'}
+                  </button>
+                )}
+                {erroImagem && <p className="text-xs text-destructive">{erroImagem}</p>}
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

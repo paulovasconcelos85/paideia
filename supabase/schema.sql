@@ -87,6 +87,7 @@ create table public.pensamentos (
   user_id uuid references public.profiles(id) on delete cascade not null,
   conteudo text not null,
   tags text[],
+  imagem_url text,
   livro_id uuid references public.livros(id) on delete set null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()

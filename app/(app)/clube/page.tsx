@@ -8,7 +8,7 @@ export default async function ClubePage() {
   const [{ data: pensamentos }, { data: citacoes }, { data: prosas }] = await Promise.all([
     supabase
       .from('pensamentos')
-      .select('id, user_id, conteudo, tags, created_at, nome_publicador, livros(titulo, autor)')
+      .select('id, user_id, conteudo, tags, imagem_url, created_at, nome_publicador, livros(titulo, autor)')
       .eq('publico', true)
       .order('created_at', { ascending: false })
       .limit(200),
@@ -91,7 +91,7 @@ export default async function ClubePage() {
     }))
   }
 
-  type PensamentoRow = { id: string; user_id: string; conteudo: string; tags: string[] | null; created_at: string; nome_publicador: string | null; livros: { titulo: string; autor: string | null } | { titulo: string; autor: string | null }[] | null }
+  type PensamentoRow = { id: string; user_id: string; conteudo: string; tags: string[] | null; imagem_url: string | null; created_at: string; nome_publicador: string | null; livros: { titulo: string; autor: string | null } | { titulo: string; autor: string | null }[] | null }
   type CitacaoRow = { id: string; user_id: string; texto: string; pagina: number | null; created_at: string; nome_publicador: string | null; livros: { titulo: string; autor: string | null } | { titulo: string; autor: string | null }[] | null }
   type ProosaRow = { id: string; user_id: string; titulo: string; frase: string | null; conteudo: string; created_at: string; nome_publicador: string | null }
 
@@ -99,6 +99,7 @@ export default async function ClubePage() {
     ...mapear(pensamentos as PensamentoRow[] ?? [], 'pensamento', item => ({
       conteudo: item.conteudo,
       tags: Array.isArray(item.tags) ? item.tags : null,
+      imagem_url: item.imagem_url,
       livro: Array.isArray(item.livros) ? item.livros[0] ?? null : item.livros,
     })),
     ...mapear(citacoes as CitacaoRow[] ?? [], 'citacao', item => ({
