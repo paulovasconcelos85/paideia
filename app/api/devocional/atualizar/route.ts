@@ -12,9 +12,17 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: message }, { status: 502 })
   }
 
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  let role: string | null = null
+  try {
+    role = serviceKey ? JSON.parse(Buffer.from(serviceKey.split('.')[1], 'base64').toString()).role : null
+  } catch {
+    role = 'não foi possível decodificar'
+  }
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    serviceKey!
   )
 
   const hoje = new Date().toISOString().slice(0, 10)
@@ -24,7 +32,7 @@ export async function GET() {
     .upsert({ data: hoje, titulo: devocional.titulo, texto: devocional.texto }, { onConflict: 'data' })
 
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: false, error: error.message, debugRole: role, hasKey: !!serviceKey }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true, data: hoje, titulo: devocional.titulo })
