@@ -3,6 +3,7 @@ import type { DashboardStats } from '@/lib/types'
 import { BookOpen, BookMarked, ShoppingCart, Star } from 'lucide-react'
 import EixoProgressCard from '@/components/eixo-progress-card'
 import RelogioVida from '@/components/relogio-vida'
+import DevocionalDia from '@/components/devocional-dia'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -55,6 +56,9 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Devocional do dia */}
+      <DevocionalDia />
 
       {/* Relógio da vida */}
       {profile?.data_nascimento && (
