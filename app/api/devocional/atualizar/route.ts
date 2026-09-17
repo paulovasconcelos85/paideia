@@ -4,10 +4,12 @@ import { getDevocionalDoDia } from '@/lib/devocional'
 
 // cron diário: busca o devocional do site externo e salva no Supabase
 export async function GET() {
-  const devocional = await getDevocionalDoDia()
-
-  if (!devocional) {
-    return NextResponse.json({ ok: false, error: 'não foi possível obter o devocional' }, { status: 502 })
+  let devocional
+  try {
+    devocional = await getDevocionalDoDia()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'erro desconhecido ao buscar o devocional'
+    return NextResponse.json({ ok: false, error: message }, { status: 502 })
   }
 
   const supabase = createClient(
