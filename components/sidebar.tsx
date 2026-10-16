@@ -3,11 +3,12 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BookOpen, CalendarDays, LayoutDashboard, Library, LogOut, NotebookPen, Quote, Settings, Users } from 'lucide-react'
+import { BookOpen, CalendarDays, Feather, LayoutDashboard, Library, LogOut, NotebookPen, Quote, Settings, Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/lib/types'
 
 const NAV = [
+  { href: '/fragmento', label: 'Fragmento', short: 'Escrever', icon: Feather },
   { href: '/dashboard', label: 'Dashboard', short: 'Início', icon: LayoutDashboard },
   { href: '/biblioteca', label: 'Biblioteca', short: 'Livros', icon: Library },
   { href: '/plano', label: 'Plano mensal', short: 'Plano', icon: CalendarDays },
@@ -83,7 +84,7 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
       </aside>
 
       {/* Bottom nav mobile/tablet */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-border bg-background lg:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-border bg-background pb-[env(safe-area-inset-bottom)] lg:hidden">
         {NAV.map(({ href, short, icon: Icon }) => {
           const active = pathname.startsWith(href)
           return (

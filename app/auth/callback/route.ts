@@ -28,5 +28,5 @@ export async function GET(request: Request) {
     return redirectWithError(exchangeError.message)
   }
 
-  return NextResponse.redirect(`${origin}/dashboard`)
+  return NextResponse.redirect(`${origin}/fragmento`)
 }

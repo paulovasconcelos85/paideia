@@ -26,7 +26,7 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // Rotas protegidas
-  const protectedPaths = ['/dashboard', '/biblioteca', '/plano', '/citacoes', '/caderno']
+  const protectedPaths = ['/fragmento', '/dashboard', '/biblioteca', '/plano', '/citacoes', '/caderno']
   const isProtected = protectedPaths.some(p => request.nextUrl.pathname.startsWith(p))
 
   if (!user && isProtected) {
@@ -34,7 +34,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && request.nextUrl.pathname === '/login') {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    return NextResponse.redirect(new URL('/fragmento', request.url))
   }
 
   return supabaseResponse
