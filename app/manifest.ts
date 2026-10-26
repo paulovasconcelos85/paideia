@@ -2,9 +2,9 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Paideia Reformada',
+    name: 'Paideia Ekos',
     short_name: 'Paideia',
-    description: 'Fragmentos, leituras e reflexões',
+    description: 'Fragmentos, leituras, reflexões e finanças da família',
     start_url: '/fragmento',
     scope: '/',
     display: 'standalone',
@@ -20,6 +20,7 @@ export default function manifest(): MetadataRoute.Manifest {
     shortcuts: [
       { name: 'Novo fragmento', url: '/fragmento' },
       { name: 'Caderno', url: '/caderno' },
+      { name: 'Finanças', url: '/financas' },
     ],
   }
 }

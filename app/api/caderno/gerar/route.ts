@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { carregarAiConfig, gerarTexto } from '@/lib/ai'
 
 function buildSystemPrompt(aiPerfil: string | null, aiInstrucoes: string | null): string {
   const parts: string[] = []
@@ -49,30 +50,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('anthropic_api_key, openai_api_key, gemini_api_key, ai_provider, ai_perfil, ai_instrucoes')
-    .eq('id', user.id)
-    .single()
-
-  const provider = profile?.ai_provider ?? 'anthropic'
-  const keyMap: Record<string, string | null | undefined> = {
-    anthropic: profile?.anthropic_api_key,
-    openai: profile?.openai_api_key,
-    gemini: profile?.gemini_api_key,
-  }
-  const providerLabel: Record<string, string> = {
-    anthropic: 'Claude (Anthropic)',
-    openai: 'ChatGPT (OpenAI)',
-    gemini: 'Gemini (Google)',
-  }
-  const apiKey = keyMap[provider]?.trim()
-
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: `Chave da API ${providerLabel[provider] ?? provider} não configurada. Acesse Configurações.` },
-      { status: 400 }
-    )
+  const aiConfig = await carregarAiConfig(supabase, user.id)
+  if ('error' in aiConfig) {
+    return NextResponse.json({ error: aiConfig.error }, { status: 400 })
   }
 
   const body = await request.json().catch(() => ({}))
@@ -171,74 +151,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Nenhuma anotação encontrada ainda.' }, { status: 400 })
   }
 
-  const systemPrompt = buildSystemPrompt(profile?.ai_perfil ?? null, profile?.ai_instrucoes ?? null)
+  const systemPrompt = buildSystemPrompt(aiConfig.aiPerfil, aiConfig.aiInstrucoes)
   const userMessage = `Aqui estão meus fragmentos de leitura e pensamento. Transforme-os em um texto corrido, como páginas de um caderno intelectual pessoal:\n\n${fragmentos.join('\n\n')}`
 
-  let raw = ''
-
-  if (provider === 'openai') {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        max_tokens: 4000,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.text()
-      return NextResponse.json({ error: `Erro na API OpenAI: ${err}` }, { status: 500 })
-    }
-    const d = await res.json()
-    raw = d.choices?.[0]?.message?.content ?? ''
-
-  } else if (provider === 'gemini') {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-          generationConfig: { maxOutputTokens: 4000 },
-        }),
-      }
-    )
-    if (!res.ok) {
-      const err = await res.text()
-      return NextResponse.json({ error: `Erro na API Gemini: ${err}` }, { status: 500 })
-    }
-    const d = await res.json()
-    raw = d.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-
-  } else {
-    // Anthropic (padrão)
-    const model = process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5'
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 4000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.text()
-      return NextResponse.json({ error: `Erro na API Claude: ${err}` }, { status: 500 })
-    }
-    const d = await res.json()
-    raw = d.content?.find((p: { type?: string }) => p.type === 'text')?.text ?? ''
+  let raw: string
+  try {
+    raw = await gerarTexto(aiConfig, systemPrompt, userMessage)
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 })
   }
 
   const fraseMatch = raw.match(/<frase>([\s\S]*?)<\/frase>/)

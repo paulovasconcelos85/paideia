@@ -3,8 +3,8 @@ import './globals.css'
 import { Toaster } from '@/components/ui/toaster'
 
 export const metadata: Metadata = {
-  title: 'Paideia Reformada',
-  description: 'Biblioteca de formação intelectual cristã',
+  title: 'Paideia Ekos',
+  description: 'Formação intelectual cristã e mordomia da casa',
   applicationName: 'Paideia',
   icons: {
     icon: '/icons/icon-192.png',

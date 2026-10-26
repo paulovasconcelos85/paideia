@@ -1,4 +1,4 @@
-# Paideia Reformada
+# Paideia Ekos
 
 Biblioteca de formação intelectual cristã, reformada e conservadora.
 
@@ -77,7 +77,7 @@ Acesse: http://localhost:3000
 ```bash
 git init
 git add .
-git commit -m "feat: MVP Paideia Reformada"
+git commit -m "feat: MVP Paideia Ekos"
 git remote add origin https://github.com/SEU_USER/paideia-reformada.git
 git push -u origin main
 ```

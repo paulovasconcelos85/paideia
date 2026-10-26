@@ -24,9 +24,9 @@ export default function LoginPage() {
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
             <BookOpen className="h-7 w-7 text-primary" />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">Paideia Reformada</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Paideia Ekos</h1>
           <p className="text-sm text-muted-foreground">
-            Sua biblioteca de formação intelectual cristã
+            Formação intelectual cristã e mordomia da casa
           </p>
         </div>
 

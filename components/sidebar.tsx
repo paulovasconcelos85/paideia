@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BookOpen, CalendarDays, Feather, LayoutDashboard, Library, LogOut, NotebookPen, Quote, Settings, Users } from 'lucide-react'
+import { BookOpen, CalendarDays, Feather, LayoutDashboard, Library, LogOut, NotebookPen, Quote, Settings, Users, Wallet } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/lib/types'
 
@@ -15,6 +15,7 @@ const NAV = [
   { href: '/citacoes', label: 'Citações', short: 'Citações', icon: Quote },
   { href: '/caderno', label: 'Caderno', short: 'Caderno', icon: NotebookPen },
   { href: '/clube', label: 'Clube', short: 'Clube', icon: Users },
+  { href: '/financas', label: 'Finanças', short: 'Ekos', icon: Wallet },
   { href: '/configuracoes', label: 'Configurações', short: 'Config', icon: Settings },
 ]
 
@@ -34,7 +35,7 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 flex-col border-r border-border bg-background lg:flex">
         <div className="flex h-16 items-center gap-2 border-b border-border px-6">
           <BookOpen className="h-5 w-5 text-primary" />
-          <span className="text-sm font-semibold">Paideia Reformada</span>
+          <span className="text-sm font-semibold">Paideia Ekos</span>
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
