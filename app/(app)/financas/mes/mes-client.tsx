@@ -73,8 +73,7 @@ export default function MesClient({
       const lista = existe ? prev.map(x => x.id === l.id ? l : x) : [l, ...prev]
       return lista.filter(x => x.competencia === competencia) // foi para outro mês (fatura seguinte)
     })
-    setSheet(null)
-    setEditando(null)
+    setEditando(null) // edição fecha; lançamento novo deixa a janela aberta para o próximo
     refresh()
   }
 

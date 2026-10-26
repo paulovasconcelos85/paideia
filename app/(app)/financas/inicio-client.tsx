@@ -221,7 +221,6 @@ export default function InicioClient({ familiaId, userId, cartoes, renda, mes, p
           rendaMensal={renda}
           onSaved={l => {
             if (l.competencia === mes.competencia) setGasto(g => g + Number(l.valor))
-            setLancando(false)
             startTransition(() => router.refresh())
           }}
           onClose={() => setLancando(false)}

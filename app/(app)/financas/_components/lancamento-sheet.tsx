@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { CreditCard, Hourglass } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { CheckCircle2, CreditCard, Hourglass } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  CATEGORIAS_DESPESA, CATEGORIAS_SUPERFLUAS, competenciaISO, fraseCustoEmTempo, hojeISO, parseBRL,
+  CATEGORIAS_DESPESA, CATEGORIAS_SUPERFLUAS, competenciaISO, formatBRL, fraseCustoEmTempo, hojeISO, parseBRL,
   type Cartao, type Lancamento, type Plano,
 } from '@/lib/financas'
 import Sheet from './sheet'
@@ -47,6 +47,9 @@ export default function LancamentoSheet({
   const [todasCategorias, setTodasCategorias] = useState(!CATEGORIAS_RAPIDAS.includes(lancamento?.categoria ?? 'alimentacao'))
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  // Lançamento em sequência: depois de salvar, a janela fica pronta para o próximo
+  const [salvos, setSalvos] = useState<{ ultimo: string; valor: number; total: number } | null>(null)
+  const valorRef = useRef<HTMLInputElement>(null)
 
   // Lançamento novo: começa no último meio de pagamento usado (quase sempre o cartão)
   useEffect(() => {
@@ -83,9 +86,15 @@ export default function LancamentoSheet({
       : supabase.from('fin_lancamentos').insert(payload)
     const { data: salvo, error } = await query.select().single()
     setSaving(false)
-    if (error || !salvo) return setErro('Não foi possível salvar. Tente de novo.')
+    if (error || !salvo) return setErro(`Não foi possível salvar.${error ? ` (${error.code}: ${error.message})` : ''}`)
     try { localStorage.setItem(ULTIMO_PAGAMENTO_KEY, cartaoId) } catch { /* ignorado */ }
     onSaved(salvo as Lancamento)
+    if (lancamento) return
+    // Mantém cartão, categoria e data; limpa valor e descrição para o próximo
+    setSalvos(prev => ({ ultimo: (salvo as Lancamento).descricao, valor: valorNum, total: (prev?.total ?? 0) + 1 }))
+    setValor('')
+    setDescricao('')
+    valorRef.current?.focus()
   }
 
   async function excluir() {
@@ -102,6 +111,13 @@ export default function LancamentoSheet({
   return (
     <Sheet titulo={lancamento ? 'Editar lançamento' : 'Quanto foi?'} onClose={onClose}>
       <div className="space-y-5">
+        {salvos && (
+          <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{salvos.ultimo} · {formatBRL(salvos.valor)}</span>
+            <span className="whitespace-nowrap text-xs">{salvos.total} {salvos.total === 1 ? 'lançado' : 'lançados'}</span>
+          </div>
+        )}
         <div>
           <div className="flex items-baseline gap-2 border-b-2 border-primary/40 pb-1 focus-within:border-primary">
             <span className="text-2xl text-muted-foreground">R$</span>
@@ -110,6 +126,7 @@ export default function LancamentoSheet({
               value={valor}
               onChange={e => { setValor(e.target.value); setErro(null) }}
               placeholder="0,00"
+              ref={valorRef}
               autoFocus={!lancamento}
               data-grande
               className="w-full bg-transparent text-4xl font-semibold tabular-nums focus:outline-none"
@@ -175,8 +192,14 @@ export default function LancamentoSheet({
           disabled={saving}
           className="w-full rounded-lg bg-primary py-3 text-base font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving ? 'Salvando...' : 'Lançar'}
+          {saving ? 'Salvando...' : lancamento ? 'Salvar' : salvos ? 'Lançar outro' : 'Lançar'}
         </button>
+
+        {salvos && !lancamento && (
+          <button type="button" onClick={onClose} className="w-full rounded-lg border border-primary py-3 text-base font-medium text-primary">
+            Concluir
+          </button>
+        )}
 
         {lancamento && onDeleted && (
           <button type="button" onClick={excluir} className="w-full text-sm text-red-600">

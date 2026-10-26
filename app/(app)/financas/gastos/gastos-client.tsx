@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CreditCard, Pencil, Plus, Receipt, Settings2, Trash2, Wallet } from 'lucide-react'
+import { CheckCircle2, CreditCard, Pencil, Plus, Receipt, Settings2, Trash2, Wallet } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, despesaMensal, fimParcelas, formatBRL, formatMesAno,
@@ -98,6 +98,9 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  // Lançamento em sequência: a janela fica aberta e conta o que já foi salvo
+  const [salvos, setSalvos] = useState<{ ultimo: string; total: number } | null>(null)
+  const descricaoRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState(FORM_VAZIO)
   const [filtroProjecao, setFiltroProjecao] = useState('todos')
   const [ultimoPagamento, setUltimoPagamento] = useState<string | null>(null)
@@ -124,6 +127,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
     setEditandoId(null)
     setForm({ ...FORM_VAZIO, cartao_id: padrao })
     setErro(null)
+    setSalvos(null)
     setModalOpen(true)
   }
 
@@ -186,15 +190,24 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
     const { data, error } = await query.select().single()
 
     setSaving(false)
-    if (error || !data) return setErro('Não foi possível salvar. Tente novamente.')
+    if (error || !data) return setErro(`Não foi possível salvar.${error ? ` (${error.code}: ${error.message})` : ''}`)
 
     try { localStorage.setItem(ULTIMO_PAGAMENTO_KEY, form.cartao_id) } catch { /* ignorado */ }
     setUltimoPagamento(form.cartao_id)
 
     const salvo = data as Despesa
     setDespesas(prev => editandoId ? prev.map(d => d.id === editandoId ? salvo : d) : [salvo, ...prev])
-    setModalOpen(false)
     startTransition(() => router.refresh())
+
+    if (editandoId) {
+      setModalOpen(false)
+      return
+    }
+    // Gasto novo: continua na janela para o próximo, mantendo cartão e categoria
+    setSalvos(prev => ({ ultimo: salvo.descricao, total: (prev?.total ?? 0) + 1 }))
+    setForm(p => ({ ...FORM_VAZIO, cartao_id: p.cartao_id, categoria: p.categoria, essencial: p.essencial }))
+    setErro(null)
+    descricaoRef.current?.focus()
   }
 
   async function excluir(d: Despesa) {
@@ -481,6 +494,14 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
           <div className="bg-background rounded-t-2xl sm:rounded-xl border border-border w-full sm:max-w-lg shadow-xl p-5 sm:p-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pb-6 space-y-5 max-h-[92vh] overflow-y-auto">
             <h2 className="text-lg font-semibold">{editandoId ? 'Editar gasto fixo' : 'Novo gasto fixo'}</h2>
 
+            {salvos && !editandoId && (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+                <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                <span className="min-w-0 flex-1 truncate">&quot;{salvos.ultimo}&quot; salvo</span>
+                <span className="whitespace-nowrap text-xs">{salvos.total} {salvos.total === 1 ? 'lançado' : 'lançados'} agora</span>
+              </div>
+            )}
+
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Pago com</label>
@@ -517,6 +538,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Descrição *</label>
                 <input
+                  ref={descricaoRef}
                   value={form.descricao}
                   onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))}
                   placeholder="Ex: Mercado, Gasolina, Netflix, Geladeira"
@@ -671,9 +693,11 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="px-4 py-2 rounded-md border border-border text-sm hover:bg-secondary transition-colors"
+                className={`px-4 py-2 rounded-md border text-sm transition-colors ${
+                  salvos && !editandoId ? 'border-primary text-primary font-medium hover:bg-primary/5' : 'border-border hover:bg-secondary'
+                }`}
               >
-                Cancelar
+                {salvos && !editandoId ? 'Concluir' : 'Cancelar'}
               </button>
               <button
                 type="button"
@@ -681,7 +705,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                 disabled={saving}
                 className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                {saving ? 'Salvando...' : 'Salvar'}
+                {saving ? 'Salvando...' : editandoId ? 'Salvar' : salvos ? 'Salvar e lançar outro' : 'Salvar'}
               </button>
             </div>
           </div>

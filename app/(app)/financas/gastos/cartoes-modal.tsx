@@ -50,7 +50,7 @@ export default function CartoesModal({ userId, familiaId, cartoes, onChange, onC
       : supabase.from('fin_cartoes').insert(payload)
     const { data, error } = await query.select().single()
     setSaving(false)
-    if (error || !data) return setErro('Não foi possível salvar o cartão.')
+    if (error || !data) return setErro(`Não foi possível salvar o cartão.${error ? ` (${error.code}: ${error.message})` : ''}`)
 
     const salvo = data as Cartao
     onChange(editandoId ? cartoes.map(c => c.id === editandoId ? salvo : c) : [...cartoes, salvo])
