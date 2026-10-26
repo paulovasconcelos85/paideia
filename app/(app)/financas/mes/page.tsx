@@ -6,7 +6,7 @@ import {
 } from '@/lib/financas'
 import MesClient from './mes-client'
 
-export default async function MesPage({ searchParams }: { searchParams: { mes?: string } }) {
+export default async function MesPage({ searchParams }: { searchParams: { mes?: string; cartao?: string } }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const familiaId = await obterFamilia(supabase)
@@ -30,6 +30,7 @@ export default async function MesPage({ searchParams }: { searchParams: { mes?: 
       familiaId={familiaId}
       userId={user!.id}
       competencia={competencia}
+      cartaoInicial={searchParams.cartao ?? null}
       tetos={(familia?.tetos ?? {}) as Record<string, number>}
       lancamentos={(lancamentos ?? []) as Lancamento[]}
       cartoes={(cartoes ?? []) as Cartao[]}

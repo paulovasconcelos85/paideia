@@ -23,6 +23,7 @@ interface Props {
   despesas: Despesa[]
   plano: Plano | null
   renda: number
+  cartaoInicial: string | null // vindo de Gastos fixos: abre a lista daquele cartão
 }
 
 function mesVizinho(competencia: string, delta: number) {
@@ -32,13 +33,16 @@ function mesVizinho(competencia: string, delta: number) {
 }
 
 export default function MesClient({
-  familiaId, userId, competencia, tetos: tetosIniciais, lancamentos: iniciais, cartoes, despesas, plano, renda,
+  familiaId, userId, competencia, tetos: tetosIniciais, lancamentos: iniciais, cartoes, despesas, plano, renda, cartaoInicial,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [lancamentos, setLancamentos] = useState(iniciais)
   const [tetos, setTetos] = useState(tetosIniciais)
   const [aberta, setAberta] = useState<string | null>(null)
+  // Por categoria (resumo) ou em lista (todas as linhas, para conferir com a fatura)
+  const [visao, setVisao] = useState<'categorias' | 'lista'>(cartaoInicial ? 'lista' : 'categorias')
+  const [filtro, setFiltro] = useState<string>(cartaoInicial ?? 'todos') // 'todos' | 'fora' | id do cartão
   const [sheet, setSheet] = useState<'novo' | 'fatura' | 'tetos' | 'fixos' | null>(null)
   const [editando, setEditando] = useState<Lancamento | null>(null)
 
@@ -66,6 +70,16 @@ export default function MesClient({
     .sort((a, b) => b.total - a.total || b.teto - a.teto)
 
   const nomeCartao = (id: string | null) => cartoes.find(c => c.id === id)?.nome
+  const porCartao = cartoes
+    .map(c => ({ cartao: c, total: lancamentos.filter(l => l.cartao_id === c.id).reduce((a, l) => a + Number(l.valor), 0) }))
+    .filter(x => x.total !== 0)
+  const foraDoCartao = lancamentos.filter(l => !l.cartao_id).reduce((a, l) => a + Number(l.valor), 0)
+  const filtrados = lancamentos.filter(l => filtro === 'todos' || (filtro === 'fora' ? !l.cartao_id : l.cartao_id === filtro))
+  const chipFiltro = (ativo: boolean) =>
+    `flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
+      ativo ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-card hover:bg-secondary'
+    }`
+  const filtrar = (f: string) => { setFiltro(f); setVisao('lista') }
 
   function aoSalvar(l: Lancamento) {
     setLancamentos(prev => {
@@ -127,6 +141,21 @@ export default function MesClient({
         )}
       </div>
 
+      {(porCartao.length > 0 || foraDoCartao !== 0) && (
+        <div className="flex flex-wrap gap-2">
+          {porCartao.map(({ cartao, total }) => (
+            <button key={cartao.id} type="button" onClick={() => filtrar(cartao.id)} className={chipFiltro(visao === 'lista' && filtro === cartao.id)}>
+              <CreditCard className="h-3 w-3 text-primary" /> {cartao.nome}: <strong className="tabular-nums">{formatBRL(total)}</strong>
+            </button>
+          ))}
+          {foraDoCartao !== 0 && (
+            <button type="button" onClick={() => filtrar('fora')} className={chipFiltro(visao === 'lista' && filtro === 'fora')}>
+              Pix / débito: <strong className="tabular-nums">{formatBRL(foraDoCartao)}</strong>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Ações do mês */}
       <div className="grid grid-cols-3 gap-2">
         <button type="button" onClick={() => setSheet('fatura')} className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card px-2 py-3 text-xs hover:bg-secondary">
@@ -145,8 +174,63 @@ export default function MesClient({
         </button>
       </div>
 
-      {/* Categorias, cada uma abre seus lançamentos */}
-      {porCategoria.length === 0 ? (
+      {/* Resumo por categoria ou todas as linhas */}
+      {lancamentos.length > 0 && (
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex rounded-lg bg-secondary p-1">
+            {(['categorias', 'lista'] as const).map(v => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setVisao(v)}
+                className={`rounded-md px-3 py-1.5 text-sm ${visao === v ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`}
+              >
+                {v === 'categorias' ? 'Por categoria' : 'Todas as linhas'}
+              </button>
+            ))}
+          </div>
+          {visao === 'lista' && filtro !== 'todos' && (
+            <button type="button" onClick={() => setFiltro('todos')} className="text-xs text-primary">ver todos</button>
+          )}
+        </div>
+      )}
+
+      {visao === 'lista' ? (
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-secondary/40 px-4 py-2.5 text-sm">
+            <span>{filtrados.length} {filtrados.length === 1 ? 'lançamento' : 'lançamentos'}</span>
+            <strong className="tabular-nums">{formatBRL(filtrados.reduce((a, l) => a + Number(l.valor), 0))}</strong>
+          </div>
+          {filtrados.length === 0 ? (
+            <p className="p-6 text-center text-sm text-muted-foreground">Nenhum lançamento aqui neste mês.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {filtrados.map(l => (
+                <li key={l.id}>
+                  <button
+                    type="button"
+                    onClick={() => setEditando(l)}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-secondary/60 hover:bg-secondary/30"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{l.descricao}</p>
+                      <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                        {new Date(`${l.data}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                        <span className={`rounded px-1.5 ${CATEGORIAS_DESPESA[l.categoria]?.className ?? ''}`}>
+                          {CATEGORIAS_DESPESA[l.categoria]?.label ?? l.categoria}
+                        </span>
+                        {filtro === 'todos' && l.cartao_id && <span>{nomeCartao(l.cartao_id)}</span>}
+                        {l.parcelas_total && <span>{l.parcela_atual}/{l.parcelas_total}</span>}
+                      </p>
+                    </div>
+                    <span className={`text-sm tabular-nums ${Number(l.valor) < 0 ? 'text-green-700' : ''}`}>{formatBRL(Number(l.valor))}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : porCategoria.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
           Nada lançado em {nomeMes(competencia).toLowerCase()}. Toque no <strong>+</strong> a cada gasto, ou importe a fatura do cartão.
         </div>

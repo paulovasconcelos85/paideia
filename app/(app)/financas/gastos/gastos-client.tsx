@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, CreditCard, Pencil, Plus, Receipt, Settings2, Trash2, Wallet } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -17,6 +18,7 @@ interface Props {
   familiaId: string
   despesas: Despesa[]
   cartoes: Cartao[]
+  realPorCartao: Record<string, number> // lançado no mês, por cartão
 }
 
 const FORM_VAZIO = {
@@ -86,7 +88,7 @@ function ProjecaoGastos({ valores }: { valores: number[] }) {
   )
 }
 
-export default function GastosClient({ userId, familiaId, despesas: initialDespesas, cartoes: initialCartoes }: Props) {
+export default function GastosClient({ userId, familiaId, despesas: initialDespesas, cartoes: initialCartoes, realPorCartao }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -326,11 +328,9 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
       {despesas.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground">Faturas do cartão (este mês)</p>
+            <p className="text-xs text-muted-foreground">Previsto nos cartões</p>
             <p className="text-lg font-semibold tabular-nums">{formatBRL(totalFaturas)}</p>
-            <p className="text-xs text-muted-foreground">
-              {totalPlanejado > 0 ? `${((totalFaturas / (totalFaturas + totalFora || 1)) * 100).toFixed(0)}% dos seus gastos do mês` : '—'}
-            </p>
+            <p className="text-xs text-muted-foreground">só fixos e parcelas · o gasto real fica na aba Mês</p>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <p className="text-xs text-muted-foreground">Fora do cartão (este mês)</p>
@@ -402,10 +402,18 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                       <span className="font-medium truncate">{c.nome}</span>
                       {c.dia_vencimento && <span className="text-xs text-muted-foreground whitespace-nowrap">vence dia {c.dia_vencimento}</span>}
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted-foreground">Fatura do mês</p>
-                      <p className="font-semibold tabular-nums">{formatBRL(fatura)}</p>
-                    </div>
+                    {realPorCartao[c.id] ? (
+                      <Link href={`/financas/mes?cartao=${c.id}`} className="text-right hover:text-primary">
+                        <p className="text-xs text-muted-foreground">Lançado no mês ›</p>
+                        <p className="font-semibold tabular-nums">{formatBRL(realPorCartao[c.id])}</p>
+                        <p className="text-[11px] text-muted-foreground">previsto: {formatBRL(fatura)}</p>
+                      </Link>
+                    ) : (
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">Previsto (fixos + parcelas)</p>
+                        <p className="font-semibold tabular-nums">{formatBRL(fatura)}</p>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     {parcelado > 0 && <span>Parcelas a pagar: <strong className="text-amber-700">{formatBRL(parcelado)}</strong></span>}
