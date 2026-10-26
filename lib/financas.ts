@@ -266,6 +266,7 @@ export interface Lancamento {
   parcelas_total: number | null
   origem: 'manual' | 'fatura' | 'fixo'
   despesa_id: string | null
+  essencial: boolean | null // null = padrão da categoria
   created_at: string
 }
 
@@ -320,6 +321,11 @@ export const TIPOS_DIVIDA: Record<TipoDivida, string> = {
 
 // Categorias que costumam ser escolha, não necessidade: nelas mostramos o custo em "dias do sonho"
 export const CATEGORIAS_SUPERFLUAS = new Set(['lazer', 'assinaturas', 'pessoal', 'outros'])
+
+/** Essencial se marcado; sem marcação, segue a categoria. */
+export function lancamentoEssencial(l: Pick<Lancamento, 'essencial' | 'categoria'>): boolean {
+  return l.essencial ?? !CATEGORIAS_SUPERFLUAS.has(l.categoria)
+}
 
 /** Primeiro dia do mês, no formato do banco (YYYY-MM-01). */
 export function competenciaISO(data = new Date()): string {

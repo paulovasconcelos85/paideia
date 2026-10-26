@@ -6,19 +6,21 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, CreditCard, Pencil, Plus, Receipt, Settings2, Trash2, Wallet } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, despesaMensal, fimParcelas, formatBRL, formatMesAno,
+  CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, competenciaISO, despesaMensal, lancamentoEssencial, fimParcelas, formatBRL, formatMesAno,
   parcelasRestantes, parseBRL, projetarGastosMensais, valorRestante,
-  type Cartao, type Despesa, type FrequenciaDespesa,
+  type Cartao, type Despesa, type FrequenciaDespesa, type Lancamento, type Plano,
 } from '@/lib/financas'
 import CartoesModal from './cartoes-modal'
-import { ULTIMO_PAGAMENTO_KEY } from '../_components/lancamento-sheet'
+import LancamentoSheet, { ULTIMO_PAGAMENTO_KEY } from '../_components/lancamento-sheet'
 
 interface Props {
   userId: string
   familiaId: string
   despesas: Despesa[]
   cartoes: Cartao[]
-  realPorCartao: Record<string, number> // lançado no mês, por cartão
+  lancamentosMes: Lancamento[] // lançado nos cartões neste mês (a fatura real)
+  plano: Plano | null
+  renda: number
 }
 
 const FORM_VAZIO = {
@@ -88,7 +90,7 @@ function ProjecaoGastos({ valores }: { valores: number[] }) {
   )
 }
 
-export default function GastosClient({ userId, familiaId, despesas: initialDespesas, cartoes: initialCartoes, realPorCartao }: Props) {
+export default function GastosClient({ userId, familiaId, despesas: initialDespesas, cartoes: initialCartoes, lancamentosMes, plano, renda }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -103,6 +105,18 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
   // Lançamento em sequência: a janela fica aberta e conta o que já foi salvo
   const [salvos, setSalvos] = useState<{ ultimo: string; total: number } | null>(null)
   const descricaoRef = useRef<HTMLInputElement>(null)
+  // Fatura real do mês, por cartão, com edição completa de cada linha
+  const [lancMes, setLancMes] = useState(lancamentosMes)
+  const [abaCartao, setAbaCartao] = useState<Record<string, 'fatura' | 'fixos'>>({})
+  const [lancSheet, setLancSheet] = useState<{ lancamento: Lancamento | null; cartaoId: string } | null>(null)
+  // Lançar um parcelado ou "todo mês" cria item no orçamento: acompanha os dados novos do servidor
+  useEffect(() => { setDespesas(initialDespesas) }, [initialDespesas])
+  useEffect(() => { setLancMes(lancamentosMes) }, [lancamentosMes])
+
+  const realPorCartao = lancMes.reduce<Record<string, number>>((acc, l) => {
+    acc[l.cartao_id!] = (acc[l.cartao_id!] ?? 0) + Number(l.valor)
+    return acc
+  }, {})
   const [form, setForm] = useState(FORM_VAZIO)
   const [filtroProjecao, setFiltroProjecao] = useState('todos')
   const [ultimoPagamento, setUltimoPagamento] = useState<string | null>(null)
@@ -434,18 +448,71 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                     </div>
                   )}
                 </div>
-                {itens.length > 0 && (
-                  <ul className="divide-y divide-border">
-                    {itens.map(d => linhaDespesa(d, true))}
-                  </ul>
-                )}
-                <button
-                  type="button"
-                  onClick={() => abrirNovo(c.id)}
-                  className="flex w-full items-center gap-2 border-t border-border px-4 py-2.5 text-sm text-primary hover:bg-secondary/50"
-                >
-                  <Plus className="w-4 h-4" /> Lançar gasto no {c.nome}
-                </button>
+                {(() => {
+                  const linhas = lancMes.filter(l => l.cartao_id === c.id)
+                  const aba = abaCartao[c.id] ?? (linhas.length > 0 ? 'fatura' : 'fixos')
+                  return (
+                    <>
+                      <div className="flex border-b border-border text-sm">
+                        {([['fatura', `Fatura do mês (${linhas.length})`], ['fixos', `Fixos e parcelas (${itens.length})`]] as const).map(([k, label]) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onClick={() => setAbaCartao(p => ({ ...p, [c.id]: k }))}
+                            className={`-mb-px flex-1 border-b-2 px-3 py-2 ${aba === k ? 'border-primary font-medium text-primary' : 'border-transparent text-muted-foreground'}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {aba === 'fatura' ? (
+                        linhas.length > 0 ? (
+                          <ul className="divide-y divide-border">
+                            {linhas.map(l => (
+                              <li key={l.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => setLancSheet({ lancamento: l, cartaoId: c.id })}
+                                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-secondary/60 hover:bg-secondary/30"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm">{l.descricao}</p>
+                                    <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                                      {new Date(`${l.data}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                      <span className={`rounded px-1.5 ${CATEGORIAS_DESPESA[l.categoria]?.className ?? ''}`}>
+                                        {CATEGORIAS_DESPESA[l.categoria]?.label ?? l.categoria}
+                                      </span>
+                                      {l.parcelas_total && <span>{l.parcela_atual}/{l.parcelas_total}</span>}
+                                      {!lancamentoEssencial(l) && <span className="text-amber-700">não essencial</span>}
+                                    </p>
+                                  </div>
+                                  <span className={`text-sm tabular-nums ${Number(l.valor) < 0 ? 'text-green-700' : ''}`}>{formatBRL(Number(l.valor))}</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="px-4 py-5 text-center text-sm text-muted-foreground">Nada lançado neste cartão este mês.</p>
+                        )
+                      ) : itens.length > 0 ? (
+                        <ul className="divide-y divide-border">
+                          {itens.map(d => linhaDespesa(d, true))}
+                        </ul>
+                      ) : (
+                        <p className="px-4 py-5 text-center text-sm text-muted-foreground">Nenhum fixo ou parcela neste cartão.</p>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => aba === 'fatura' ? setLancSheet({ lancamento: null, cartaoId: c.id }) : abrirNovo(c.id)}
+                        className="flex w-full items-center gap-2 border-t border-border px-4 py-2.5 text-sm text-primary hover:bg-secondary/50"
+                      >
+                        <Plus className="w-4 h-4" /> {aba === 'fatura' ? `Lançar gasto no ${c.nome}` : 'Novo fixo ou parcela'}
+                      </button>
+                    </>
+                  )
+                })()}
               </div>
             )
           })}
@@ -489,6 +556,28 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
       >
         <Plus className="h-6 w-6" />
       </button>
+
+      {lancSheet && (
+        <LancamentoSheet
+          familiaId={familiaId}
+          userId={userId}
+          cartoes={cartoes}
+          planoPrincipal={plano}
+          rendaMensal={renda}
+          lancamento={lancSheet.lancamento}
+          cartaoPadrao={lancSheet.cartaoId}
+          onSaved={l => {
+            setLancMes(prev => {
+              const lista = prev.some(x => x.id === l.id) ? prev.map(x => x.id === l.id ? l : x) : [l, ...prev]
+              return lista.filter(x => x.cartao_id && x.competencia === competenciaISO()) // foi para a fatura seguinte: sai da lista
+            })
+            if (lancSheet.lancamento) setLancSheet(null)
+            startTransition(() => router.refresh())
+          }}
+          onDeleted={id => { setLancMes(prev => prev.filter(x => x.id !== id)); setLancSheet(null); startTransition(() => router.refresh()) }}
+          onClose={() => setLancSheet(null)}
+        />
+      )}
 
       {cartoesOpen && (
         <CartoesModal userId={userId} familiaId={familiaId} cartoes={cartoes} onChange={atualizarCartoes} onClose={() => setCartoesOpen(false)} />

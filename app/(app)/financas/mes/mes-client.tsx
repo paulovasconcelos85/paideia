@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronLeft, ChevronRight, CreditCard, FileUp, ListChecks, Plus, SlidersHorizontal } from 'lucide-react'
 import {
-  CATEGORIAS_DESPESA, despesaMensal, formatBRL, nomeMes, parcelasRestantes,
+  CATEGORIAS_DESPESA, despesaMensal, formatBRL, lancamentoEssencial, nomeMes, parcelasRestantes,
   type Cartao, type Despesa, type Lancamento, type Plano,
 } from '@/lib/financas'
 import LancamentoSheet from '../_components/lancamento-sheet'
@@ -49,6 +49,7 @@ export default function MesClient({
   const refresh = () => startTransition(() => router.refresh())
 
   const gasto = lancamentos.reduce((a, l) => a + Number(l.valor), 0)
+  const naoEssencial = lancamentos.filter(l => !lancamentoEssencial(l)).reduce((a, l) => a + Number(l.valor), 0)
   const totalTetos = Object.values(tetos).reduce((a, v) => a + Number(v), 0)
   const planejado = totalTetos > 0 ? totalTetos : despesas.reduce((a, d) => a + despesaMensal(d), 0)
   const restante = planejado - gasto
@@ -116,6 +117,9 @@ export default function MesClient({
           <div>
             <p className="text-xs text-muted-foreground">Gasto no mês</p>
             <p className="text-3xl font-semibold tabular-nums">{formatBRL(gasto)}</p>
+            {naoEssencial > 0 && (
+              <p className="text-xs text-amber-700">{formatBRL(naoEssencial)} não essenciais ({gasto > 0 ? Math.round((naoEssencial / gasto) * 100) : 0}%)</p>
+            )}
           </div>
           {planejado > 0 && (
             <div className="text-right">
