@@ -21,7 +21,8 @@ Regras:
 - Parcelas: em "LOJA 03/10" use parcela_atual 3 e parcelas_total 10; remova o "03/10" da descrição.
 - "data" no formato AAAA-MM-DD. Se a fatura só mostra dia/mês, deduza o ano pelo período da fatura.
 - "descricao": nome legível do estabelecimento, sem códigos.
-- "categoria": uma destas chaves: ${Object.keys(CATEGORIAS_DESPESA).join(', ')}.
+- "categoria": a chave que melhor descreve a compra, entre estas (chave: o que entra):
+${Object.entries(CATEGORIAS_DESPESA).map(([k, v]) => `  ${k}: ${v.descricao}`).join('\n')}
 - "observacao": uma frase curta se algo ficou ilegível ou incerto; senão string vazia.`
 
 const normalizar = (s: string) =>

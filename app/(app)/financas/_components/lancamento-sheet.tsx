@@ -27,7 +27,7 @@ type Tipo = 'avulso' | 'parcelado' | 'mensal'
 export const ULTIMO_PAGAMENTO_KEY = 'ekos:ultimo-pagamento'
 
 // As mais usadas no dia a dia aparecem primeiro; o resto fica em "mais"
-const CATEGORIAS_RAPIDAS = ['alimentacao', 'transporte', 'lazer', 'saude', 'filhos', 'pessoal', 'contas', 'outros']
+const CATEGORIAS_RAPIDAS = ['supermercado', 'alimentacao', 'combustivel', 'transporte', 'saude', 'fitness', 'filhos', 'lazer', 'pessoal', 'outros']
 
 /** No cartão, compras depois do fechamento caem na fatura do mês seguinte. */
 export function competenciaDoGasto(dataISO: string, cartao?: Cartao | null): string {
@@ -43,11 +43,11 @@ export default function LancamentoSheet({
 }: Props) {
   const supabase = createClient()
   const [valor, setValor] = useState(lancamento ? Number(lancamento.valor).toFixed(2).replace('.', ',') : '')
-  const [categoria, setCategoria] = useState(lancamento?.categoria ?? 'alimentacao')
+  const [categoria, setCategoria] = useState(lancamento?.categoria ?? 'supermercado')
   const [cartaoId, setCartaoId] = useState<string>(lancamento?.cartao_id ?? cartaoPadrao ?? '')
   const [descricao, setDescricao] = useState(lancamento?.descricao ?? '')
   const [data, setData] = useState(lancamento?.data ?? hojeISO())
-  const [todasCategorias, setTodasCategorias] = useState(!CATEGORIAS_RAPIDAS.includes(lancamento?.categoria ?? 'alimentacao'))
+  const [todasCategorias, setTodasCategorias] = useState(!CATEGORIAS_RAPIDAS.includes(lancamento?.categoria ?? 'supermercado'))
   // Essencial: segue a categoria até a pessoa marcar à mão
   const [essencialManual, setEssencialManual] = useState<boolean | null>(lancamento?.essencial ?? null)
   const [tipo, setTipo] = useState<Tipo>(
@@ -238,6 +238,7 @@ export default function LancamentoSheet({
               </button>
             )}
           </div>
+          <p className="text-xs text-muted-foreground">{CATEGORIAS_DESPESA[categoria]?.descricao}</p>
         </div>
 
         <div className="space-y-2">

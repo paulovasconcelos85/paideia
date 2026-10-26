@@ -732,6 +732,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                   >
                     {Object.entries(CATEGORIAS_DESPESA).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
+                  <p className="text-xs text-muted-foreground">{CATEGORIAS_DESPESA[form.categoria]?.descricao}</p>
                 </div>
                 {!form.cartao_id && form.frequencia !== 'parcelada' && (
                   <div className="space-y-1.5">

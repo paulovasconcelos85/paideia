@@ -58,9 +58,12 @@ export default function TetosSheet({ familiaId, tetos, despesas, onSaved, onClos
         </button>
 
         <div className="space-y-2">
-          {Object.entries(CATEGORIAS_DESPESA).map(([c, { label }]) => (
+          {Object.entries(CATEGORIAS_DESPESA).map(([c, { label, descricao }]) => (
             <div key={c} className="flex items-center gap-3">
-              <span className="flex-1 text-sm">{label}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm">{label}</span>
+                <span className="block truncate text-[11px] text-muted-foreground">{descricao}</span>
+              </span>
               <div className="relative w-36">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
                 <input

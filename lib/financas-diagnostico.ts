@@ -34,7 +34,8 @@ export interface Diagnostico {
 const TETO_CATEGORIA: Record<string, number> = {
   moradia: 30,
   transporte: 15,
-  alimentacao: 20,
+  supermercado: 15,
+  alimentacao: 8, // fora de casa
   lazer: 10,
   assinaturas: 5,
   pessoal: 5,

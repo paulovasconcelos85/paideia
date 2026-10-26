@@ -45,21 +45,25 @@ export interface Renda {
   created_at: string
 }
 
-export const CATEGORIAS_DESPESA: Record<string, { label: string; className: string }> = {
-  moradia:     { label: 'Moradia',      className: 'bg-blue-100 text-blue-800' },
-  alimentacao: { label: 'Alimentação',  className: 'bg-orange-100 text-orange-800' },
-  transporte:  { label: 'Transporte',   className: 'bg-cyan-100 text-cyan-800' },
-  saude:       { label: 'Saúde',        className: 'bg-red-100 text-red-800' },
-  educacao:    { label: 'Educação',     className: 'bg-violet-100 text-violet-800' },
-  filhos:      { label: 'Filhos',       className: 'bg-pink-100 text-pink-800' },
-  contas:      { label: 'Contas e serviços', className: 'bg-slate-100 text-slate-700' },
-  dividas:     { label: 'Dívidas e empréstimos', className: 'bg-rose-100 text-rose-800' },
-  igreja:      { label: 'Dízimo e ofertas', className: 'bg-amber-100 text-amber-800' },
-  lazer:       { label: 'Lazer',        className: 'bg-green-100 text-green-800' },
-  assinaturas: { label: 'Assinaturas',  className: 'bg-indigo-100 text-indigo-800' },
-  pessoal:     { label: 'Cuidados pessoais', className: 'bg-fuchsia-100 text-fuchsia-800' },
-  impostos:    { label: 'Impostos e taxas', className: 'bg-stone-100 text-stone-700' },
-  outros:      { label: 'Outros',       className: 'bg-gray-100 text-gray-700' },
+export const CATEGORIAS_DESPESA: Record<string, { label: string; className: string; descricao: string }> = {
+  moradia:      { label: 'Moradia',               className: 'bg-blue-100 text-blue-800',       descricao: 'Aluguel ou financiamento, condomínio, IPTU, manutenção da casa' },
+  supermercado: { label: 'Supermercado',          className: 'bg-lime-100 text-lime-800',       descricao: 'Compras do mês para casa: mercado, atacarejo, feira, padaria, açougue' },
+  alimentacao:  { label: 'Alimentação fora',      className: 'bg-orange-100 text-orange-800',   descricao: 'Restaurantes, lanches, cafés e delivery (iFood, Rappi)' },
+  combustivel:  { label: 'Combustível',           className: 'bg-yellow-100 text-yellow-800',   descricao: 'Gasolina, etanol, diesel, GNV: tudo de posto' },
+  transporte:   { label: 'Transporte',            className: 'bg-cyan-100 text-cyan-800',       descricao: 'Uber e 99, ônibus, estacionamento, pedágio, oficina e seguro do carro' },
+  saude:        { label: 'Saúde',                 className: 'bg-red-100 text-red-800',         descricao: 'Plano de saúde, consultas, exames, farmácia, dentista' },
+  fitness:      { label: 'Fitness',               className: 'bg-emerald-100 text-emerald-800', descricao: 'Wellhub (Gympass), CrossFit, academia, suplementos, esportes' },
+  educacao:     { label: 'Educação',              className: 'bg-violet-100 text-violet-800',   descricao: 'Escola, faculdade, cursos, idiomas, livros e material escolar' },
+  filhos:       { label: 'Filhos',                className: 'bg-pink-100 text-pink-800',       descricao: 'Roupas, brinquedos, atividades e cuidados das crianças' },
+  contas:       { label: 'Contas e serviços',     className: 'bg-slate-100 text-slate-700',     descricao: 'Luz, água, gás, internet, celular, anuidade e tarifas bancárias' },
+  dividas:      { label: 'Dívidas e empréstimos', className: 'bg-rose-100 text-rose-800',       descricao: 'Parcelas de empréstimos, juros, encargos e rotativo do cartão' },
+  igreja:       { label: 'Dízimo e ofertas',      className: 'bg-amber-100 text-amber-800',     descricao: 'Dízimo, ofertas, missões e doações' },
+  viagens:      { label: 'Viagens',               className: 'bg-sky-100 text-sky-800',         descricao: 'Passagens, hotel, Airbnb, aluguel de carro e passeios das viagens' },
+  lazer:        { label: 'Lazer',                 className: 'bg-green-100 text-green-800',     descricao: 'Cinema, passeios, shows, jogos e hobbies do dia a dia' },
+  assinaturas:  { label: 'Assinaturas',           className: 'bg-indigo-100 text-indigo-800',   descricao: 'Streaming, apps, Amazon Prime e serviços digitais mensais' },
+  pessoal:      { label: 'Cuidados pessoais',     className: 'bg-fuchsia-100 text-fuchsia-800', descricao: 'Roupas, salão, barbeiro, cosméticos e presentes' },
+  impostos:     { label: 'Impostos e taxas',      className: 'bg-stone-100 text-stone-700',     descricao: 'IPVA, licenciamento, IOF, multas e taxas do governo' },
+  outros:       { label: 'Outros',                className: 'bg-gray-100 text-gray-700',       descricao: 'O que não se encaixa nas demais (vale detalhar depois)' },
 }
 
 export const TIPOS_RENDA: Record<TipoRenda, { label: string; frequenciaPadrao: FrequenciaRenda }> = {
@@ -329,7 +333,7 @@ export const TIPOS_DIVIDA: Record<TipoDivida, string> = {
 }
 
 // Categorias que costumam ser escolha, não necessidade: nelas mostramos o custo em "dias do sonho"
-export const CATEGORIAS_SUPERFLUAS = new Set(['lazer', 'assinaturas', 'pessoal', 'outros'])
+export const CATEGORIAS_SUPERFLUAS = new Set(['lazer', 'viagens', 'assinaturas', 'pessoal', 'outros'])
 
 /**
  * Lançamento como deve aparecer: se está ligado a um item do orçamento (fixo ou parcela),
