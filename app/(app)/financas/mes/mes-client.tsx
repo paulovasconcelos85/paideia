@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronLeft, ChevronRight, CreditCard, FileUp, ListChecks, Plus, SlidersHorizontal } from 'lucide-react'
 import {
-  CATEGORIAS_DESPESA, despesaMensal, formatBRL, lancamentoEssencial, nomeMes, parcelasRestantes,
+  CATEGORIAS_DESPESA, despesaMensal, espelharLancamento, formatBRL, lancamentoEssencial, nomeMes, parcelasRestantes,
   type Cartao, type Despesa, type Lancamento, type Plano,
 } from '@/lib/financas'
 import LancamentoSheet from '../_components/lancamento-sheet'
@@ -37,7 +37,10 @@ export default function MesClient({
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [lancamentos, setLancamentos] = useState(iniciais)
+  const [brutos, setLancamentos] = useState(iniciais)
+  useEffect(() => { setLancamentos(iniciais) }, [iniciais])
+  // O que está ligado a "Fixos e parcelas" aparece com o nome, a categoria e a parcela de lá
+  const lancamentos = useMemo(() => brutos.map(l => espelharLancamento(l, despesas)), [brutos, despesas])
   const [tetos, setTetos] = useState(tetosIniciais)
   const [aberta, setAberta] = useState<string | null>(null)
   // Por categoria (resumo) ou em lista (todas as linhas, para conferir com a fatura)

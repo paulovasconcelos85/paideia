@@ -3,7 +3,7 @@ import { buscarPtax } from './cambio'
 import { simularQuitacao } from './dividas'
 import { registrarFechamento } from './familia'
 import {
-  CATEGORIAS_DESPESA, competenciaISO, despesaMensal, lancamentoEssencial, planoPrincipal, projetarPlano, rendaMensal,
+  CATEGORIAS_DESPESA, competenciaISO, despesaMensal, espelharLancamento, lancamentoEssencial, planoPrincipal, projetarPlano, rendaMensal,
   type Cartao, type Despesa, type Fechamento, type Lancamento, type Plano, type Renda,
 } from './financas'
 import { diagnosticar, type Alerta } from './financas-diagnostico'
@@ -69,7 +69,8 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
     supabase.from('fin_despesas').select('*').eq('familia_id', familiaId),
     supabase.from('fin_rendas').select('*').eq('familia_id', familiaId),
     supabase.from('fin_planos').select('*').eq('familia_id', familiaId),
-    supabase.from('fin_lancamentos').select('valor, categoria, essencial').eq('familia_id', familiaId).eq('competencia', competencia),
+    supabase.from('fin_lancamentos').select('valor, categoria, essencial, descricao, despesa_id, competencia, parcela_atual, parcelas_total')
+      .eq('familia_id', familiaId).eq('competencia', competencia),
     supabase.from('fin_lancamentos').select('valor').eq('familia_id', familiaId).eq('competencia', mesAnterior),
     carregarPatrimonio(supabase, familiaId, ptax?.venda ?? null),
     supabase.from('fin_cartoes').select('*').eq('familia_id', familiaId).order('created_at'),
@@ -82,7 +83,8 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
   const listaPlanos = ((planos ?? []) as Plano[]).map(p =>
     p.moeda === 'USD' && !p.cotacao && ptax ? { ...p, cotacao: ptax.venda } : p
   )
-  const lancs = (lancamentos ?? []) as Pick<Lancamento, 'valor' | 'categoria' | 'essencial'>[]
+  type LancResumo = Pick<Lancamento, 'valor' | 'categoria' | 'essencial' | 'descricao' | 'despesa_id' | 'competencia' | 'parcela_atual' | 'parcelas_total'>
+  const lancs = ((lancamentos ?? []) as LancResumo[]).map(l => espelharLancamento(l, listaDespesas))
 
   // ── O mês
   const gasto = lancs.reduce((a, l) => a + Number(l.valor), 0)

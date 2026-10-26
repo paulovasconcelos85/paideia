@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, CreditCard, Pencil, Plus, Receipt, Settings2, Trash2, Wallet } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, competenciaISO, despesaMensal, lancamentoEssencial, parcelaNoMes, fimParcelas, formatBRL, formatMesAno,
+  CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, competenciaISO, despesaMensal, espelharLancamento, lancamentoEssencial, parcelaNoMes, fimParcelas, formatBRL, formatMesAno,
   parcelasRestantes, parseBRL, projetarGastosMensais, valorRestante,
   type Cartao, type Despesa, type FrequenciaDespesa, type Lancamento, type Plano,
 } from '@/lib/financas'
@@ -461,7 +461,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                   )}
                 </div>
                 {(() => {
-                  const linhas = lancMes.filter(l => l.cartao_id === c.id)
+                  const linhas = lancMes.filter(l => l.cartao_id === c.id).map(l => espelharLancamento(l, despesas))
                   const aba = abaCartao[c.id] ?? (linhas.length > 0 ? 'fatura' : 'fixos')
                   return (
                     <>

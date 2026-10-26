@@ -331,6 +331,27 @@ export const TIPOS_DIVIDA: Record<TipoDivida, string> = {
 // Categorias que costumam ser escolha, não necessidade: nelas mostramos o custo em "dias do sonho"
 export const CATEGORIAS_SUPERFLUAS = new Set(['lazer', 'assinaturas', 'pessoal', 'outros'])
 
+/**
+ * Lançamento como deve aparecer: se está ligado a um item do orçamento (fixo ou parcela),
+ * nome, categoria, essencial e número da parcela vêm de lá. O valor continua o do lançamento
+ * (é o que foi cobrado de verdade no mês).
+ */
+export function espelharLancamento<L extends Pick<Lancamento, 'despesa_id' | 'competencia' | 'descricao' | 'categoria' | 'essencial' | 'parcela_atual' | 'parcelas_total'>>(
+  l: L,
+  despesas: Despesa[],
+): L {
+  const d = l.despesa_id ? despesas.find(x => x.id === l.despesa_id) : undefined
+  if (!d) return l
+  const n = parcelaNoMes(d, l.competencia)
+  return {
+    ...l,
+    descricao: d.descricao,
+    categoria: d.categoria,
+    essencial: d.essencial,
+    ...(d.frequencia === 'parcelada' && n ? { parcela_atual: n, parcelas_total: d.parcelas_total } : {}),
+  }
+}
+
 /** Essencial se marcado; sem marcação, segue a categoria. */
 export function lancamentoEssencial(l: Pick<Lancamento, 'essencial' | 'categoria'>): boolean {
   return l.essencial ?? !CATEGORIAS_SUPERFLUAS.has(l.categoria)
