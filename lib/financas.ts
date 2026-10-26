@@ -172,6 +172,7 @@ export interface EtapaPlano { texto: string; feito: boolean }
 export interface Plano {
   id: string
   user_id: string
+  familia_id: string
   titulo: string
   descricao: string | null
   status: StatusPlano
@@ -247,4 +248,120 @@ export function projetarPlano(p: Plano, aporte = Number(p.aporte_mensal), hoje =
 
 export function formatMesAno(data: Date): string {
   return data.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })
+}
+
+// ─── Lançamentos reais, patrimônio e dívidas ─────────────────────────
+
+export interface Lancamento {
+  id: string
+  familia_id: string
+  user_id: string
+  data: string
+  competencia: string
+  descricao: string
+  valor: number
+  categoria: string
+  cartao_id: string | null
+  parcela_atual: number | null
+  parcelas_total: number | null
+  origem: 'manual' | 'fatura' | 'fixo'
+  despesa_id: string | null
+  created_at: string
+}
+
+export type TipoConta = 'conta' | 'poupanca' | 'reserva' | 'investimento' | 'dolar' | 'bem' | 'outro'
+export type TipoDivida = 'cartao' | 'cheque_especial' | 'emprestimo' | 'consignado' | 'financiamento' | 'familia' | 'outro'
+
+export interface Conta {
+  id: string
+  familia_id: string
+  nome: string
+  tipo: TipoConta
+  saldo: number
+  updated_at: string
+}
+
+export interface Divida {
+  id: string
+  familia_id: string
+  nome: string
+  tipo: TipoDivida
+  saldo: number
+  juros_mensal: number
+  parcela: number
+  updated_at: string
+}
+
+export interface Fechamento {
+  mes: string
+  ativos: number
+  dividas: number
+}
+
+export const TIPOS_CONTA: Record<TipoConta, string> = {
+  conta: 'Conta corrente',
+  poupanca: 'Poupança',
+  reserva: 'Reserva de emergência',
+  investimento: 'Investimentos',
+  dolar: 'Conta em dólar (valor em R$)',
+  bem: 'Bens (carro, imóvel)',
+  outro: 'Outro',
+}
+
+export const TIPOS_DIVIDA: Record<TipoDivida, string> = {
+  cartao: 'Cartão (rotativo/parcelado)',
+  cheque_especial: 'Cheque especial',
+  emprestimo: 'Empréstimo pessoal',
+  consignado: 'Consignado',
+  financiamento: 'Financiamento',
+  familia: 'Família e amigos',
+  outro: 'Outra',
+}
+
+// Categorias que costumam ser escolha, não necessidade: nelas mostramos o custo em "dias do sonho"
+export const CATEGORIAS_SUPERFLUAS = new Set(['lazer', 'assinaturas', 'pessoal', 'outros'])
+
+/** Primeiro dia do mês, no formato do banco (YYYY-MM-01). */
+export function competenciaISO(data = new Date()): string {
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+export function hojeISO(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function nomeMes(competencia: string): string {
+  const s = new Date(`${competencia}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/** O plano que guia a família: o ativo de maior prioridade. */
+export function planoPrincipal(planos: Plano[]): Plano | null {
+  const ativos = planos
+    .filter(p => p.status === 'ativo')
+    .sort((a, b) => b.prioridade - a.prioridade || a.created_at.localeCompare(b.created_at))
+  return ativos[0] ?? null
+}
+
+/**
+ * Quanto um gasto custa em tempo: dias de atraso no plano principal e horas de trabalho.
+ * Dias = valor ÷ quanto o plano recebe por dia.
+ */
+export function custoEmTempo(valor: number, plano: Plano | null, rendaMensal: number) {
+  const aporte = plano ? Number(plano.aporte_mensal) : 0
+  return {
+    dias: plano && aporte > 0 ? valor / (aporte / 30) : null,
+    horas: rendaMensal > 0 ? valor / (rendaMensal / 176) : null, // 22 dias × 8 h
+    plano: plano?.titulo ?? null,
+  }
+}
+
+export function fraseCustoEmTempo(valor: number, plano: Plano | null, rendaMensal: number): string | null {
+  if (valor <= 0) return null
+  const { dias, horas, plano: nome } = custoEmTempo(valor, plano, rendaMensal)
+  const partes: string[] = []
+  if (horas !== null) partes.push(`${horas < 1 ? 'menos de 1' : Math.round(horas)} h de trabalho`)
+  if (dias !== null && nome) partes.push(`${dias < 1 ? 'menos de 1 dia' : `${Math.round(dias)} ${Math.round(dias) === 1 ? 'dia' : 'dias'}`} a mais até "${nome}"`)
+  return partes.length ? partes.join(' · ') : null
 }

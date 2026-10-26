@@ -51,6 +51,22 @@ export const MODELOS_PLANO: ModeloPlano[] = [
     ),
   },
   {
+    id: 'renda-extra',
+    titulo: 'Renda extra para o sonho',
+    descricao: 'Uma segunda fonte de renda, com 100% do valor indo para o plano principal.',
+    moeda: 'BRL',
+    itens: itens('Meta de renda extra em 12 meses'),
+    etapas: etapas(
+      'Se for servidor público, conferir as vedações do cargo (servidores do Judiciário não podem advogar: Estatuto da OAB, art. 28)',
+      'Listar o que sei fazer bem: Direito, Economia, ADS (programação, dados, automação)',
+      'Escolher UMA oferta: automação de documentos para escritórios, planilhas e análise de dados para pequenos negócios, aulas ou mentorias',
+      'Definir preço e um pacote simples',
+      'Conseguir o primeiro cliente (rede de contatos, igreja, LinkedIn)',
+      'Formalizar: servidor público em geral não pode ser MEI; como autônomo, recolher pelo carnê-leão e separar o imposto',
+      'Programar a transferência de 100% da renda extra para o plano principal',
+    ),
+  },
+  {
     id: 'pos-eua',
     titulo: 'Pós-graduação nos EUA',
     descricao: 'Mestrado ou LL.M. com a família, visto de estudante F-1.',

@@ -10,14 +10,14 @@ import {
   type Cartao, type Despesa, type FrequenciaDespesa,
 } from '@/lib/financas'
 import CartoesModal from './cartoes-modal'
+import { ULTIMO_PAGAMENTO_KEY } from '../_components/lancamento-sheet'
 
 interface Props {
   userId: string
+  familiaId: string
   despesas: Despesa[]
   cartoes: Cartao[]
 }
-
-const ULTIMO_PAGAMENTO_KEY = 'ekos:ultimo-pagamento'
 
 const FORM_VAZIO = {
   cartao_id: '',
@@ -86,7 +86,7 @@ function ProjecaoGastos({ valores }: { valores: number[] }) {
   )
 }
 
-export default function GastosClient({ userId, despesas: initialDespesas, cartoes: initialCartoes }: Props) {
+export default function GastosClient({ userId, familiaId, despesas: initialDespesas, cartoes: initialCartoes }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -166,6 +166,7 @@ export default function GastosClient({ userId, despesas: initialDespesas, cartoe
     const parcelada = form.frequencia === 'parcelada'
     const payload = {
       user_id: userId,
+      familia_id: familiaId,
       cartao_id: form.cartao_id || null,
       descricao: form.descricao.trim(),
       categoria: form.categoria,
@@ -304,7 +305,7 @@ export default function GastosClient({ userId, despesas: initialDespesas, cartoe
             className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Novo gasto
+            Novo gasto fixo
           </button>
         </div>
       </div>
@@ -462,14 +463,14 @@ export default function GastosClient({ userId, despesas: initialDespesas, cartoe
       <button
         type="button"
         onClick={() => abrirNovo()}
-        aria-label="Novo gasto"
+        aria-label="Novo gasto fixo"
         className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 lg:hidden"
       >
         <Plus className="h-6 w-6" />
       </button>
 
       {cartoesOpen && (
-        <CartoesModal userId={userId} cartoes={cartoes} onChange={atualizarCartoes} onClose={() => setCartoesOpen(false)} />
+        <CartoesModal userId={userId} familiaId={familiaId} cartoes={cartoes} onChange={atualizarCartoes} onClose={() => setCartoesOpen(false)} />
       )}
 
       {modalOpen && (
@@ -478,7 +479,7 @@ export default function GastosClient({ userId, despesas: initialDespesas, cartoe
           onClick={e => { if (e.target === e.currentTarget) setModalOpen(false) }}
         >
           <div className="bg-background rounded-t-2xl sm:rounded-xl border border-border w-full sm:max-w-lg shadow-xl p-5 sm:p-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pb-6 space-y-5 max-h-[92vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold">{editandoId ? 'Editar gasto' : 'Novo gasto'}</h2>
+            <h2 className="text-lg font-semibold">{editandoId ? 'Editar gasto fixo' : 'Novo gasto fixo'}</h2>
 
             <div className="space-y-4">
               <div className="space-y-1.5">

@@ -31,7 +31,7 @@ body {
 
 /* iOS Safari amplia a tela ao focar campos com fonte menor que 16px */
 @media (max-width: 639px) {
-  input, select, textarea {
+  input:not([data-grande]), select, textarea {
     font-size: 16px !important;
   }
 }

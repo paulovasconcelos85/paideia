@@ -109,3 +109,85 @@ export async function gerarTexto(
   const d = await res.json()
   return d.content?.find((p: { type?: string }) => p.type === 'text')?.text ?? ''
 }
+
+export interface Arquivo {
+  nome: string
+  mime: string   // image/jpeg, image/png, application/pdf...
+  base64: string
+}
+
+/** Como gerarTexto, mas enviando um arquivo (imagem ou PDF) junto com a mensagem. */
+export async function gerarTextoComArquivo(
+  config: AiConfig,
+  systemPrompt: string,
+  userMessage: string,
+  arquivo: Arquivo,
+  maxTokens = 8000
+): Promise<string> {
+  const { provider, apiKey } = config
+  const ehPdf = arquivo.mime === 'application/pdf'
+
+  if (provider === 'openai') {
+    const anexo = ehPdf
+      ? { type: 'file', file: { filename: arquivo.nome, file_data: `data:application/pdf;base64,${arquivo.base64}` } }
+      : { type: 'image_url', image_url: { url: `data:${arquivo.mime};base64,${arquivo.base64}` } }
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: [anexo, { type: 'text', text: userMessage }] },
+        ],
+      }),
+    })
+    if (!res.ok) throw new Error(`Erro na API OpenAI: ${await res.text()}`)
+    const d = await res.json()
+    return d.choices?.[0]?.message?.content ?? ''
+  }
+
+  if (provider === 'gemini') {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{
+            role: 'user',
+            parts: [{ inline_data: { mime_type: arquivo.mime, data: arquivo.base64 } }, { text: userMessage }],
+          }],
+          generationConfig: { maxOutputTokens: maxTokens },
+        }),
+      }
+    )
+    if (!res.ok) throw new Error(`Erro na API Gemini: ${await res.text()}`)
+    const d = await res.json()
+    return d.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+  }
+
+  const model = process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5'
+  const anexo = ehPdf
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: arquivo.base64 } }
+    : { type: 'image', source: { type: 'base64', media_type: arquivo.mime, data: arquivo.base64 } }
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: [anexo, { type: 'text', text: userMessage }] }],
+    }),
+  })
+  if (!res.ok) throw new Error(`Erro na API Claude: ${await res.text()}`)
+  const d = await res.json()
+  return d.content?.find((p: { type?: string }) => p.type === 'text')?.text ?? ''
+}

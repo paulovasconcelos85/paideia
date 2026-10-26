@@ -12,11 +12,12 @@ import { MODELOS_PLANO } from '@/lib/planos-modelos'
 
 interface Props {
   userId: string
+  familiaId: string
   planos: Plano[]
   saldoMensal: number
 }
 
-export default function PlanosClient({ userId, planos, saldoMensal }: Props) {
+export default function PlanosClient({ userId, familiaId, planos, saldoMensal }: Props) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -44,6 +45,7 @@ export default function PlanosClient({ userId, planos, saldoMensal }: Props) {
       .from('fin_planos')
       .insert({
         user_id: userId,
+        familia_id: familiaId,
         titulo: titulo.trim(),
         descricao: modelo.descricao || null,
         moeda: modelo.moeda,

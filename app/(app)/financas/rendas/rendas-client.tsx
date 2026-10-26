@@ -11,6 +11,7 @@ import {
 
 interface Props {
   userId: string
+  familiaId: string
   rendas: Renda[]
 }
 
@@ -25,7 +26,7 @@ const FORM_VAZIO = {
 
 const inputClass = 'w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
-export default function RendasClient({ userId, rendas: initial }: Props) {
+export default function RendasClient({ userId, familiaId, rendas: initial }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -90,6 +91,7 @@ export default function RendasClient({ userId, rendas: initial }: Props) {
     setSaving(true)
     const payload = {
       user_id: userId,
+      familia_id: familiaId,
       descricao: form.descricao.trim(),
       tipo: form.tipo,
       valor,

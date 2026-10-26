@@ -4,9 +4,16 @@ import {
   CircleDot, Lightbulb, PiggyBank, Scale,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { CATEGORIAS_DESPESA, despesaMensal, formatBRL, type Despesa, type Renda } from '@/lib/financas'
+import { obterFamilia } from '@/lib/familia'
+import { buscarPtax } from '@/lib/cambio'
+import {
+  CATEGORIAS_DESPESA, despesaMensal, formatBRL, formatMesAno, planoPrincipal, projetarPlano,
+  type Despesa, type Plano, type Renda,
+} from '@/lib/financas'
 import { diagnosticar, type NivelAlerta } from '@/lib/financas-diagnostico'
-import ConsultorIA from './consultor-ia'
+import ConsultorIA from '../consultor-ia'
+import SimuladorIR from './simulador-ir'
+import LeiturasMordomia from './leituras-mordomia'
 
 const ESTILO_ALERTA: Record<NivelAlerta, { icon: typeof AlertOctagon; className: string; iconClass: string }> = {
   critico:      { icon: AlertOctagon,  className: 'border-red-200 bg-red-50',       iconClass: 'text-red-600' },
@@ -15,13 +22,18 @@ const ESTILO_ALERTA: Record<NivelAlerta, { icon: typeof AlertOctagon; className:
   ok:           { icon: CheckCircle2,  className: 'border-green-200 bg-green-50',   iconClass: 'text-green-600' },
 }
 
-export default async function FinancasResumoPage() {
+export default async function DiagnosticoPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  const familiaId = await obterFamilia(supabase)
 
-  const [{ data: despesas }, { data: rendas }] = await Promise.all([
-    supabase.from('fin_despesas').select('*').eq('user_id', user!.id),
-    supabase.from('fin_rendas').select('*').eq('user_id', user!.id),
+  const [{ data: despesas }, { data: rendas }, { data: planos }, { data: eixo }, { data: livros }, ptax] = await Promise.all([
+    supabase.from('fin_despesas').select('*').eq('familia_id', familiaId),
+    supabase.from('fin_rendas').select('*').eq('familia_id', familiaId),
+    supabase.from('fin_planos').select('*').eq('familia_id', familiaId),
+    supabase.from('eixos').select('id').eq('nome', 'Mordomia').maybeSingle(),
+    supabase.from('livros').select('titulo').eq('user_id', user!.id),
+    buscarPtax(),
   ])
 
   const listaDespesas = (despesas ?? []) as Despesa[]
@@ -40,6 +52,17 @@ export default async function FinancasResumoPage() {
   }
 
   const d = diagnosticar(listaDespesas, listaRendas)
+
+  // Alavanca da renda extra: quanto cada valor a mais por mês antecipa o plano principal
+  const principal = planoPrincipal((planos ?? []) as Plano[])
+  const planoAlavanca = principal?.moeda === 'USD' && !principal.cotacao && ptax ? { ...principal, cotacao: ptax.venda } : principal
+  const base = planoAlavanca ? projetarPlano(planoAlavanca) : null
+  const alavanca = planoAlavanca && base && base.faltaBRL > 0
+    ? [500, 1000, 2000].map(extra => ({ extra, ...projetarPlano(planoAlavanca, Number(planoAlavanca.aporte_mensal) + extra) }))
+    : []
+
+  // Para o IR: saúde e educação anuais que o orçamento já conhece
+  const anualDe = (cat: string) => listaDespesas.filter(x => x.categoria === cat).reduce((a, x) => a + despesaMensal(x) * 12, 0)
 
   const porCategoria = Object.entries(
     listaDespesas.reduce<Record<string, number>>((acc, x) => {
@@ -66,6 +89,10 @@ export default async function FinancasResumoPage() {
 
   return (
     <div className="space-y-6">
+      <div>
+        <Link href="/financas" className="text-sm text-muted-foreground hover:text-foreground">← Início</Link>
+        <h2 className="text-lg font-semibold mt-1">Diagnóstico e consultor</h2>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {metrics.map(({ label, value, sub, icon: Icon, color, destaque }) => (
           <div key={label} className="rounded-lg border border-border bg-card p-4 space-y-2">
@@ -203,6 +230,70 @@ export default async function FinancasResumoPage() {
           </div>
         </div>
       )}
+
+      {/* Ferramentas: recolhidas para a tela não pesar */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-medium">Ferramentas</h2>
+
+        <details className="group rounded-lg border border-border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between p-4 text-sm font-medium">
+            Renda extra: quanto ela acelera o sonho
+            <span className="text-muted-foreground transition-transform group-open:rotate-90">›</span>
+          </summary>
+          <div className="space-y-3 px-4 pb-4">
+            {alavanca.length > 0 && planoAlavanca && base ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Hoje, &quot;{planoAlavanca.titulo}&quot; fica pronto {base.dataPrevista ? `em ${formatMesAno(base.dataPrevista)}` : 'nunca, sem aporte'}.
+                  Com uma renda extra indo 100% para ele:
+                </p>
+                <ul className="space-y-1.5">
+                  {alavanca.map(a => (
+                    <li key={a.extra} className="flex items-center justify-between rounded-md bg-secondary/60 px-3 py-2 text-sm">
+                      <span>+{formatBRL(a.extra)}/mês</span>
+                      <span className="font-medium">
+                        {a.dataPrevista ? formatMesAno(a.dataPrevista) : '—'}
+                        {base.mesesNoRitmo !== null && a.mesesNoRitmo !== null && base.mesesNoRitmo > a.mesesNoRitmo && (
+                          <span className="ml-2 text-xs text-green-700">{base.mesesNoRitmo - a.mesesNoRitmo} meses antes</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Marque um plano ativo como principal, com custos preenchidos, para ver o efeito da renda extra.</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Para estruturar uma, crie em <Link href="/financas/planos" className="text-primary hover:underline">Planos</Link> o modelo &quot;Renda extra para o sonho&quot;.
+            </p>
+          </div>
+        </details>
+
+        <details className="group rounded-lg border border-border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between p-4 text-sm font-medium">
+            Imposto de renda: completo ou simplificado, e o PGBL
+            <span className="text-muted-foreground transition-transform group-open:rotate-90">›</span>
+          </summary>
+          <div className="px-4 pb-4">
+            <SimuladorIR saudeAnual={anualDe('saude')} educacaoAnual={anualDe('educacao')} />
+          </div>
+        </details>
+
+        <details className="group rounded-lg border border-border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between p-4 text-sm font-medium">
+            Leituras de mordomia
+            <span className="text-muted-foreground transition-transform group-open:rotate-90">›</span>
+          </summary>
+          <div className="px-4 pb-4">
+            <LeiturasMordomia
+              userId={user!.id}
+              eixoId={eixo?.id ?? null}
+              titulosNaBiblioteca={(livros ?? []).map(l => l.titulo as string)}
+            />
+          </div>
+        </details>
+      </div>
     </div>
   )
 }

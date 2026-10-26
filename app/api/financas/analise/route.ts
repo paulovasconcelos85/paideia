@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { obterFamilia } from '@/lib/familia'
 import { carregarAiConfig, gerarTexto } from '@/lib/ai'
-import {
-  CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, FREQUENCIA_RENDA_LABEL, MESES, STATUS_PLANO, TIPOS_RENDA,
-  despesaMensal, fimParcelas, formatBRL, formatMesAno, formatMoeda, parcelasRestantes, projetarPlano, valorRestante,
-  type Cartao, type Despesa, type Plano, type Renda,
-} from '@/lib/financas'
-import { diagnosticar } from '@/lib/financas-diagnostico'
+import { buscarPtax } from '@/lib/cambio'
+import { competenciaISO } from '@/lib/financas'
+import { montarContextoFinanceiro } from '@/lib/financas-contexto'
 
 const SYSTEM_PROMPT = `Você é um planejador financeiro pessoal experiente, cristão, que atende famílias brasileiras.
 Seu cliente é pai de família e tem dois objetivos claros:
@@ -50,72 +48,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: aiConfig.error }, { status: 400 })
   }
 
+  const familiaId = await obterFamilia(supabase)
   const body = await request.json().catch(() => ({}))
   const contexto = typeof body.contexto === 'string' ? body.contexto.trim().slice(0, 2000) : ''
 
-  const [{ data: despesasData }, { data: rendasData }, { data: planosData }, { data: cartoesData }] = await Promise.all([
-    supabase.from('fin_despesas').select('*').eq('user_id', user.id).eq('ativo', true),
-    supabase.from('fin_rendas').select('*').eq('user_id', user.id).eq('ativo', true),
-    supabase.from('fin_planos').select('*').eq('user_id', user.id).neq('status', 'concluido'),
-    supabase.from('fin_cartoes').select('*').eq('user_id', user.id),
-  ])
-  const cartoes = (cartoesData ?? []) as Cartao[]
-  const nomeCartao = (id: string | null) => cartoes.find(c => c.id === id)?.nome
-  const despesas = (despesasData ?? []) as Despesa[]
-  const rendas = (rendasData ?? []) as Renda[]
-  const planos = (planosData ?? []) as Plano[]
+  const ptax = await buscarPtax()
+  const { texto, temDados } = await montarContextoFinanceiro(supabase, familiaId, {
+    aiPerfil: aiConfig.aiPerfil,
+    ptaxVenda: ptax?.venda ?? null,
+    competenciaReal: competenciaISO(),
+  })
 
-  if (despesas.length === 0 && rendas.length === 0) {
+  if (!temDados) {
     return NextResponse.json({ error: 'Cadastre seus gastos e rendas antes de pedir a análise.' }, { status: 400 })
   }
 
-  const d = diagnosticar(despesas, rendas)
-
-  const linhasRenda = rendas.map(r =>
-    `- ${r.descricao} (${TIPOS_RENDA[r.tipo].label}, ${FREQUENCIA_RENDA_LABEL[r.frequencia].toLowerCase()}` +
-    `${r.mes_recebimento ? `, em ${MESES[r.mes_recebimento - 1].toLowerCase()}` : ''}): ${formatBRL(r.valor)}`
-  )
-  const linhasDespesa = despesas.map(x =>
-    `- [${CATEGORIAS_DESPESA[x.categoria]?.label ?? x.categoria}] ${x.descricao}: ${formatBRL(x.valor)} ` +
-    `(${FREQUENCIA_DESPESA_LABEL[x.frequencia].toLowerCase()}` +
-    `${parcelasRestantes(x) ? `, faltam ${parcelasRestantes(x)} parcelas (${formatBRL(valorRestante(x))}), última em ${formatMesAno(fimParcelas(x)!)}` : ''}` +
-    `${nomeCartao(x.cartao_id) ? `, no cartão ${nomeCartao(x.cartao_id)}` : ''}` +
-    `${x.frequencia === 'anual' ? `, ${formatBRL(despesaMensal(x))}/mês diluído` : ''}` +
-    `, ${x.essencial ? 'essencial' : 'não essencial'})` +
-    `${x.observacoes ? `. Obs.: ${x.observacoes}` : ''}`
-  )
-
-  const blocosPlanos = planos.map(p => {
-    const pr = projetarPlano(p)
-    const custos = p.itens.map(i => `  - ${i.descricao}: ${i.valor ? formatMoeda(i.valor, p.moeda) : 'valor ainda não pesquisado'}`)
-    const etapas = p.etapas.map(e => `  - [${e.feito ? 'x' : ' '}] ${e.texto}`)
-    return [
-      `### ${p.titulo} (${STATUS_PLANO[p.status].label.toLowerCase()})`,
-      p.descricao ?? '',
-      `Meta: ${formatMoeda(pr.meta, p.moeda)}${p.moeda === 'USD' && p.cotacao ? ` (≈ ${formatBRL(pr.metaBRL)} a R$ ${p.cotacao}/US$)` : ''}. ` +
-        `Guardado: ${formatMoeda(Number(p.valor_guardado), p.moeda)}. Aporte: ${formatBRL(Number(p.aporte_mensal))}/mês.` +
-        `${p.data_alvo ? ` Data desejada: ${formatMesAno(new Date(`${p.data_alvo}T12:00:00`))}.` : ''}` +
-        `${pr.dataPrevista && pr.metaBRL > 0 ? ` Previsão no ritmo atual: ${formatMesAno(pr.dataPrevista)}.` : ''}`,
-      custos.length ? `Custos:\n${custos.join('\n')}` : '',
-      etapas.length ? `Etapas:\n${etapas.join('\n')}` : '',
-    ].filter(Boolean).join('\n')
-  })
-
-  const userMessage = [
-    aiConfig.aiPerfil?.trim() ? `## Quem sou\n${aiConfig.aiPerfil.trim()}` : '',
-    `## Resumo mensal (anuais diluídos por 12; rendas eventuais fora)
-- Renda líquida média: ${formatBRL(d.renda)}
-- Gastos: ${formatBRL(d.despesa)} (essenciais ${formatBRL(d.essenciais)}, não essenciais ${formatBRL(d.naoEssenciais)})
-- Dívidas e parcelas: ${formatBRL(d.dividas)}
-- Saldo: ${formatBRL(d.saldo)}
-- Taxa de poupança: ${d.taxaPoupanca === null ? 'indefinida' : `${d.taxaPoupanca.toFixed(1)}%`}
-- Meta de reserva de emergência (6x essenciais): ${formatBRL(d.reservaMeta)}`,
-    `## Rendas\n${linhasRenda.join('\n') || '- nenhuma cadastrada'}`,
-    `## Gastos\n${linhasDespesa.join('\n') || '- nenhum cadastrado'}`,
-    `## Planos\n${blocosPlanos.join('\n\n') || 'Nenhum plano cadastrado ainda.'}`,
-    `## Alertas do diagnóstico automático\n${d.alertas.map(a => `- ${a.titulo}: ${a.texto}`).join('\n')}`,
-    contexto ? `## Contexto adicional que eu quero que você considere\n${contexto}` : '',
-  ].filter(Boolean).join('\n\n')
+  const userMessage = contexto ? `${texto}\n\n## Contexto adicional que eu quero que você considere\n${contexto}` : texto
 
   try {
     const analise = await gerarTexto(aiConfig, SYSTEM_PROMPT, userMessage, 3000)

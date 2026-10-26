@@ -7,6 +7,7 @@ import { formatBRL, parseBRL, type Cartao } from '@/lib/financas'
 
 interface Props {
   userId: string
+  familiaId: string
   cartoes: Cartao[]
   onChange: (cartoes: Cartao[]) => void
   onClose: () => void
@@ -15,7 +16,7 @@ interface Props {
 const FORM_VAZIO = { nome: '', dia_vencimento: '', dia_fechamento: '', limite: '' }
 const inputClass = 'w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
-export default function CartoesModal({ userId, cartoes, onChange, onClose }: Props) {
+export default function CartoesModal({ userId, familiaId, cartoes, onChange, onClose }: Props) {
   const supabase = createClient()
   const [form, setForm] = useState(FORM_VAZIO)
   const [editandoId, setEditandoId] = useState<string | null>(null)
@@ -38,6 +39,7 @@ export default function CartoesModal({ userId, cartoes, onChange, onClose }: Pro
     setSaving(true)
     const payload = {
       user_id: userId,
+      familia_id: familiaId,
       nome: form.nome.trim(),
       dia_vencimento: form.dia_vencimento ? Number(form.dia_vencimento) : null,
       dia_fechamento: form.dia_fechamento ? Number(form.dia_fechamento) : null,

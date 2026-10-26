@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check, Plus, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Check, Plus, Star, Trash2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   STATUS_PLANO, formatBRL, formatMesAno, formatMoeda, parseBRL, projetarPlano,
@@ -14,12 +14,13 @@ interface Props {
   plano: Plano
   saldoMensal: number
   aportesOutros: number // aportes de outros planos ativos, que disputam a mesma sobra
+  ptax: number | null    // dólar PTAX do Banco Central hoje
 }
 
 const inputClass = 'w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 const valorTexto = (n: number | null) => (n ? Number(n).toFixed(2).replace('.', ',') : '')
 
-export default function PlanoDetalhe({ plano, saldoMensal, aportesOutros }: Props) {
+export default function PlanoDetalhe({ plano, saldoMensal, aportesOutros, ptax }: Props) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -39,6 +40,17 @@ export default function PlanoDetalhe({ plano, saldoMensal, aportesOutros }: Prop
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null)
+  const [principal, setPrincipal] = useState(plano.prioridade > 0 && plano.status === 'ativo')
+
+  // O plano principal aparece no Início e mede os gastos supérfluos em "dias a mais"
+  async function marcarPrincipal() {
+    const { error } = await supabase.from('fin_planos').update({ prioridade: 0 }).eq('familia_id', plano.familia_id).neq('id', plano.id)
+    if (error) return setMsg({ tipo: 'erro', texto: 'Não foi possível marcar como principal.' })
+    await supabase.from('fin_planos').update({ prioridade: 1, status: 'ativo' }).eq('id', plano.id)
+    setPrincipal(true)
+    setForm(p => ({ ...p, status: 'ativo' }))
+    router.refresh()
+  }
 
   function alterar<K extends keyof typeof form>(campo: K, valor: (typeof form)[K]) {
     setForm(p => ({ ...p, [campo]: valor }))
@@ -153,6 +165,17 @@ export default function PlanoDetalhe({ plano, saldoMensal, aportesOutros }: Prop
               {STATUS_PLANO[s].label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={marcarPrincipal}
+            disabled={principal}
+            className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full border transition-colors ${
+              principal ? 'border-amber-300 bg-amber-50 text-amber-800 font-medium' : 'border-border text-muted-foreground hover:bg-secondary'
+            }`}
+          >
+            <Star className={`w-3 h-3 ${principal ? 'fill-amber-400 text-amber-500' : ''}`} />
+            {principal ? 'Plano principal' : 'Tornar principal'}
+          </button>
         </div>
         {form.status === 'ativo' && (
           <p className="text-xs text-muted-foreground">Planos ativos entram na conta de quanto da sua sobra mensal já está comprometida.</p>
@@ -192,6 +215,15 @@ export default function PlanoDetalhe({ plano, saldoMensal, aportesOutros }: Prop
                 className="w-24 px-2 py-1 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <span className="text-muted-foreground">reais</span>
+              {ptax && parseBRL(form.cotacao) !== Math.round(ptax * 100) / 100 && (
+                <button
+                  type="button"
+                  onClick={() => alterar('cotacao', ptax.toFixed(2).replace('.', ','))}
+                  className="ml-auto whitespace-nowrap text-xs text-primary hover:underline"
+                >
+                  usar PTAX de hoje (R$ {ptax.toFixed(2).replace('.', ',')})
+                </button>
+              )}
             </div>
           )}
 
