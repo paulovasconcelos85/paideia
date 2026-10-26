@@ -123,6 +123,25 @@ export default function LancamentoSheet({
       despesaId = despesa.id
     }
 
+    // Já ligado ao orçamento: a correção feita aqui vale lá também
+    if (lancamento?.despesa_id) {
+      const { error } = await supabase
+        .from('fin_despesas')
+        .update({
+          descricao: desc,
+          categoria,
+          essencial,
+          cartao_id: cartaoId || null,
+          ...(tipo === 'parcelado' ? { parcelas_total: total, parcelas_restantes: restantes, parcelas_ref: competencia } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', lancamento.despesa_id)
+      if (error) {
+        setSaving(false)
+        return setErro(`Não foi possível atualizar o orçamento. (${error.code}: ${error.message})`)
+      }
+    }
+
     const payload = {
       familia_id: familiaId,
       user_id: lancamento?.user_id ?? userId,

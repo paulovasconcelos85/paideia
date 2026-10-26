@@ -115,6 +115,15 @@ export function parcelasRestantes(d: DespesaParcelas, hoje = new Date()): number
   return Math.max(d.parcelas_restantes - Math.max(mesesEntre(ref, hoje), 0), 0)
 }
 
+/** Número da parcela cobrada num mês (ex.: 4 em "4/12"), a partir do orçamento. null se não der para saber. */
+export function parcelaNoMes(d: DespesaParcelas & Pick<Despesa, 'parcelas_total'>, competencia: string): number | null {
+  if (d.frequencia !== 'parcelada' || !d.parcelas_total) return null
+  const restantes = parcelasRestantes(d, new Date(`${competencia}T12:00:00`))
+  if (restantes === null) return null
+  const n = d.parcelas_total - restantes + 1
+  return n >= 1 && n <= d.parcelas_total ? n : null
+}
+
 /** Quanto ainda falta pagar de uma compra parcelada. */
 export function valorRestante(d: DespesaParcelas & Pick<Despesa, 'valor' | 'ativo'>, hoje = new Date()): number {
   if (!d.ativo) return 0

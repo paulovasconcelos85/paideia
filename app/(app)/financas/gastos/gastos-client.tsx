@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, CreditCard, Pencil, Plus, Receipt, Settings2, Trash2, Wallet } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, competenciaISO, despesaMensal, lancamentoEssencial, fimParcelas, formatBRL, formatMesAno,
+  CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, competenciaISO, despesaMensal, lancamentoEssencial, parcelaNoMes, fimParcelas, formatBRL, formatMesAno,
   parcelasRestantes, parseBRL, projetarGastosMensais, valorRestante,
   type Cartao, type Despesa, type FrequenciaDespesa, type Lancamento, type Plano,
 } from '@/lib/financas'
@@ -216,6 +216,18 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
     startTransition(() => router.refresh())
 
     if (editandoId) {
+      // Leva a correção para o lançamento deste mês ligado a este item (descrição, categoria, parcela)
+      const competencia = competenciaISO()
+      const n = parcelaNoMes(salvo, competencia)
+      const mudancas = {
+        descricao: salvo.descricao,
+        categoria: salvo.categoria,
+        essencial: salvo.essencial,
+        ...(salvo.frequencia === 'parcelada' && n ? { parcela_atual: n, parcelas_total: salvo.parcelas_total } : {}),
+      }
+      const { error: erroSync } = await supabase.from('fin_lancamentos').update(mudancas)
+        .eq('despesa_id', editandoId).eq('competencia', competencia)
+      if (!erroSync) setLancMes(prev => prev.map(l => l.despesa_id === editandoId && l.competencia === competencia ? { ...l, ...mudancas } : l))
       setModalOpen(false)
       return
     }
@@ -473,7 +485,12 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                               <li key={l.id}>
                                 <button
                                   type="button"
-                                  onClick={() => setLancSheet({ lancamento: l, cartaoId: c.id })}
+                                  onClick={() => {
+                                    // Abre já com a parcela que o orçamento indica para este mês
+                                    const d = l.despesa_id ? despesas.find(x => x.id === l.despesa_id) : null
+                                    const n = d ? parcelaNoMes(d, l.competencia) : null
+                                    setLancSheet({ lancamento: d && n ? { ...l, parcela_atual: n, parcelas_total: d.parcelas_total } : l, cartaoId: c.id })
+                                  }}
                                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-secondary/60 hover:bg-secondary/30"
                                 >
                                   <div className="min-w-0 flex-1">
@@ -483,7 +500,13 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                                       <span className={`rounded px-1.5 ${CATEGORIAS_DESPESA[l.categoria]?.className ?? ''}`}>
                                         {CATEGORIAS_DESPESA[l.categoria]?.label ?? l.categoria}
                                       </span>
-                                      {l.parcelas_total && <span>{l.parcela_atual}/{l.parcelas_total}</span>}
+                                      {(() => {
+                                        // Parcela ligada ao orçamento: o orçamento é a fonte da verdade
+                                        const d = l.despesa_id ? despesas.find(x => x.id === l.despesa_id) : null
+                                        const n = d ? parcelaNoMes(d, l.competencia) : null
+                                        if (d && n) return <span>{n}/{d.parcelas_total}</span>
+                                        return l.parcelas_total ? <span>{l.parcela_atual}/{l.parcelas_total}</span> : null
+                                      })()}
                                       {!lancamentoEssencial(l) && <span className="text-amber-700">não essencial</span>}
                                     </p>
                                   </div>

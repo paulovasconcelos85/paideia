@@ -3,72 +3,64 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Check, ChevronRight, Lightbulb, Loader2, Mail, Plus, Star, TrendingDown, TrendingUp } from 'lucide-react'
-import { formatBRL, formatMesAno, nomeMes, type Cartao, type Plano } from '@/lib/financas'
-import type { Alerta } from '@/lib/financas-diagnostico'
+import { Check, Play, Plus } from 'lucide-react'
+import type { Retrato } from '@/lib/retrato'
 import LancamentoSheet from './_components/lancamento-sheet'
+import { Capitulo, capitulos } from './_components/capitulos'
 
 interface Props {
   familiaId: string
   userId: string
-  cartoes: Cartao[]
-  renda: number
-  mes: { competencia: string; gasto: number; planejado: number }
-  patrimonio: { liquido: number; variacao: number | null } | null
-  plano: Plano | null
-  projecao: { progresso: number; dataPrevista: string | null; metaDefinida: boolean } | null
-  foco: Alerta | null
-  carta: string | null
-  podeEscreverCarta: boolean
-  setup: { rendas: boolean; fixos: boolean; cartoes: boolean; familia: boolean; planos: boolean }
+  retrato: Retrato
 }
 
-const cartao = 'block rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/40 active:bg-secondary/40'
-
-export default function InicioClient({ familiaId, userId, cartoes, renda, mes, patrimonio, plano, projecao, foco, carta: cartaInicial, podeEscreverCarta, setup }: Props) {
+export default function InicioClient({ familiaId, userId, retrato }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [lancando, setLancando] = useState(false)
-  const [gasto, setGasto] = useState(mes.gasto)
-  const [carta, setCarta] = useState(cartaInicial)
-  const [cartaAberta, setCartaAberta] = useState(false)
+  const [carta, setCarta] = useState(retrato.carta)
   const [escrevendo, setEscrevendo] = useState(false)
-  const [erroCarta, setErroCarta] = useState<string | null>(null)
 
-  async function escreverCarta() {
+  const r = { ...retrato, carta }
+  const lista = capitulos(r)
+
+  const passos = [
+    { ok: r.setup.rendas, texto: 'Cadastrar as rendas', href: '/financas/rendas' },
+    { ok: r.setup.fixos, texto: 'Cadastrar os gastos fixos', href: '/financas/gastos' },
+    { ok: r.setup.cartoes, texto: 'Cadastrar os cartões', href: '/financas/gastos' },
+    { ok: r.setup.familia, texto: 'Convidar quem divide a casa', href: '/financas/familia' },
+    { ok: r.setup.planos, texto: 'Criar o primeiro plano', href: '/financas/planos' },
+  ]
+  const configurando = passos.some(p => !p.ok)
+
+  async function pedirCarta() {
     setEscrevendo(true)
-    setErroCarta(null)
     try {
       const res = await fetch('/api/financas/carta', { method: 'POST' })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Não foi possível escrever a carta.')
-      setCarta(data.carta)
-      setCartaAberta(true)
-    } catch (e) {
-      setErroCarta((e as Error).message)
+      if (res.ok) setCarta(data.carta)
+      else alert(data.error ?? 'Não foi possível escrever a carta.')
     } finally {
       setEscrevendo(false)
     }
   }
 
-  const restante = mes.planejado - gasto
-  const pct = mes.planejado > 0 ? Math.min((gasto / mes.planejado) * 100, 100) : 0
-
-  const passos = [
-    { ok: setup.rendas, texto: 'Cadastrar as rendas', href: '/financas/rendas' },
-    { ok: setup.fixos, texto: 'Cadastrar os gastos fixos', href: '/financas/gastos' },
-    { ok: setup.cartoes, texto: 'Cadastrar os cartões', href: '/financas/gastos' },
-    { ok: setup.familia, texto: 'Convidar quem divide a casa', href: '/financas/familia' },
-    { ok: setup.planos, texto: 'Criar o primeiro plano', href: '/financas/planos' },
-  ]
-  const configurando = passos.some(p => !p.ok)
-
   return (
-    <div className="space-y-4 pb-20 lg:pb-0">
+    <div className="space-y-4 pb-24 lg:pb-8">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">O retrato das nossas finanças</p>
+        <Link
+          href="/financas/apresentacao"
+          className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background shadow-sm transition-transform active:scale-95"
+        >
+          <Play className="h-3.5 w-3.5 fill-current" /> Apresentar
+        </Link>
+      </div>
+
       {configurando && (
-        <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 space-y-3">
-          <p className="text-sm font-medium">Primeiros passos</p>
-          <ul className="space-y-1.5">
+        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5">
+          <p className="mb-2 text-sm font-medium">Primeiros passos</p>
+          <ul className="grid gap-1.5 sm:grid-cols-2">
             {passos.map(p => (
               <li key={p.texto}>
                 <Link href={p.href} className={`flex items-center gap-2 text-sm ${p.ok ? 'text-muted-foreground line-through' : 'hover:text-primary'}`}>
@@ -83,125 +75,14 @@ export default function InicioClient({ familiaId, userId, cartoes, renda, mes, p
         </div>
       )}
 
-      {/* O mês */}
-      <Link href="/financas/mes" className={cartao}>
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">{nomeMes(mes.competencia)}</p>
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        </div>
-        {mes.planejado > 0 ? (
-          <>
-            <p className="mt-1 text-sm text-muted-foreground">{restante >= 0 ? 'Ainda podemos gastar' : 'Passamos do combinado em'}</p>
-            <p className={`text-3xl font-semibold tabular-nums ${restante >= 0 ? '' : 'text-red-600'}`}>{formatBRL(Math.abs(restante))}</p>
-            <div className="mt-3 h-2 rounded-full bg-secondary overflow-hidden">
-              <div
-                className={`h-full rounded-full ${pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-green-600'}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <p className="mt-1.5 text-xs text-muted-foreground">{formatBRL(gasto)} gastos de {formatBRL(mes.planejado)}</p>
-          </>
-        ) : (
-          <>
-            <p className="mt-1 text-3xl font-semibold tabular-nums">{formatBRL(gasto)}</p>
-            <p className="text-xs text-muted-foreground">gastos lançados no mês</p>
-          </>
-        )}
-      </Link>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        {/* O placar */}
-        <Link href="/financas/patrimonio" className={cartao}>
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Patrimônio líquido</p>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+      {/* A capa ocupa a largura toda; os demais capítulos fazem duas colunas no computador */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {lista.map(c => (
+          <div key={c.id} className={c.id === 'capa' ? 'lg:col-span-2' : ''}>
+            <Capitulo id={c.id} r={r} onPedirCarta={pedirCarta} escrevendo={escrevendo} />
           </div>
-          {patrimonio ? (
-            <>
-              <p className={`mt-1 text-2xl font-semibold tabular-nums ${patrimonio.liquido >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                {formatBRL(patrimonio.liquido)}
-              </p>
-              {patrimonio.variacao !== null && patrimonio.variacao !== 0 && (
-                <p className={`flex items-center gap-1 text-xs ${patrimonio.variacao > 0 ? 'text-green-700' : 'text-red-600'}`}>
-                  {patrimonio.variacao > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                  {patrimonio.variacao > 0 ? '+' : ''}{formatBRL(patrimonio.variacao)} no mês
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="mt-1 text-sm text-muted-foreground">Quanto temos menos quanto devemos. Toque para começar.</p>
-          )}
-        </Link>
-
-        {/* O sonho */}
-        <Link href={plano ? `/financas/planos/${plano.id}` : '/financas/planos'} className={cartao}>
-          <div className="flex items-center justify-between">
-            <p className="flex items-center gap-1 text-xs text-muted-foreground"><Star className="h-3 w-3" /> Plano principal</p>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </div>
-          {plano && projecao ? (
-            <>
-              <p className="mt-1 truncate font-semibold">{plano.titulo}</p>
-              <div className="mt-2 h-2 rounded-full bg-secondary overflow-hidden">
-                <div className="h-full rounded-full bg-primary" style={{ width: `${projecao.progresso}%` }} />
-              </div>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                {!projecao.metaDefinida
-                  ? 'Preencha os custos do plano'
-                  : projecao.dataPrevista
-                    ? `${projecao.progresso.toFixed(0)}% · previsão ${formatMesAno(new Date(projecao.dataPrevista))}`
-                    : `${projecao.progresso.toFixed(0)}% · defina um aporte mensal`}
-              </p>
-            </>
-          ) : (
-            <p className="mt-1 text-sm text-muted-foreground">Marque um plano ativo como principal para acompanhar aqui.</p>
-          )}
-        </Link>
+        ))}
       </div>
-
-      {/* A carta do mês */}
-      {carta ? (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <button type="button" onClick={() => setCartaAberta(v => !v)} className="flex w-full items-center gap-3 text-left">
-            <Mail className="h-5 w-5 flex-shrink-0 text-primary" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground">Carta de {nomeMes(mes.competencia).split(' ')[0].toLowerCase()}</p>
-              {!cartaAberta && <p className="truncate text-sm">{carta.split('\n')[0]}</p>}
-            </div>
-            <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${cartaAberta ? 'rotate-90' : ''}`} />
-          </button>
-          {cartaAberta && (
-            <div className="mt-3 space-y-3 font-serif text-[15px] leading-relaxed">
-              {carta.split(/\n+/).filter(Boolean).map((par, i) => <p key={i}>{par}</p>)}
-            </div>
-          )}
-        </div>
-      ) : podeEscreverCarta && (
-        <button
-          type="button"
-          onClick={escreverCarta}
-          disabled={escrevendo}
-          className="flex w-full items-center gap-3 rounded-xl border border-dashed border-border p-4 text-left text-sm text-muted-foreground hover:bg-secondary/50"
-        >
-          {escrevendo ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
-          <span className="flex-1">
-            {escrevendo ? 'Escrevendo a carta do mês...' : 'Pedir a carta do mês ao consultor'}
-            {erroCarta && <span className="block text-xs text-red-600">{erroCarta}</span>}
-          </span>
-        </button>
-      )}
-
-      {/* O foco */}
-      {foco && (
-        <Link href="/financas/diagnostico" className={`${cartao} flex gap-3`}>
-          <Lightbulb className="h-5 w-5 flex-shrink-0 text-amber-500" />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted-foreground">Foco agora</p>
-            <p className="text-sm font-medium">{foco.titulo}</p>
-            <p className="mt-0.5 text-xs text-primary">Diagnóstico completo e consultor →</p>
-          </div>
-        </Link>
-      )}
 
       <button
         type="button"
@@ -216,13 +97,10 @@ export default function InicioClient({ familiaId, userId, cartoes, renda, mes, p
         <LancamentoSheet
           familiaId={familiaId}
           userId={userId}
-          cartoes={cartoes}
-          planoPrincipal={plano}
-          rendaMensal={renda}
-          onSaved={l => {
-            if (l.competencia === mes.competencia) setGasto(g => g + Number(l.valor))
-            startTransition(() => router.refresh())
-          }}
+          cartoes={r.cartoes}
+          planoPrincipal={r.planoPrincipal}
+          rendaMensal={r.renda}
+          onSaved={() => startTransition(() => router.refresh())}
           onClose={() => setLancando(false)}
         />
       )}
