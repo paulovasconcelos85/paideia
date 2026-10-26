@@ -113,12 +113,13 @@ export default function RendasClient({ userId, rendas: initial }: Props) {
   }
 
   async function excluir(r: Renda) {
-    if (!confirm(`Excluir "${r.descricao}"?`)) return
+    if (!confirm(`Excluir "${r.descricao}"?`)) return false
     const anterior = rendas
     setRendas(prev => prev.filter(x => x.id !== r.id))
     const { error } = await supabase.from('fin_rendas').delete().eq('id', r.id)
     if (error) setRendas(anterior)
     else startTransition(() => router.refresh())
+    return !error
   }
 
   async function toggleAtivo(r: Renda) {
@@ -162,7 +163,7 @@ export default function RendasClient({ userId, rendas: initial }: Props) {
           <div className="rounded-lg border border-border bg-card overflow-hidden">
             <ul className="divide-y divide-border">
               {rendas.map(r => (
-                <li key={r.id} className={`flex items-center gap-3 px-4 py-3 ${r.ativo ? '' : 'opacity-50'}`}>
+                <li key={r.id} onClick={() => abrirEdicao(r)} className={`flex cursor-pointer items-center gap-3 px-4 py-3 active:bg-secondary/60 sm:cursor-default sm:active:bg-transparent ${r.ativo ? '' : 'opacity-50'}`}>
                   <div className="min-w-0 flex-1">
                     <p className={`text-sm truncate ${r.ativo ? '' : 'line-through'}`}>{r.descricao}</p>
                     <p className="text-xs text-muted-foreground">
@@ -176,7 +177,7 @@ export default function RendasClient({ userId, rendas: initial }: Props) {
                       <p className="text-xs text-muted-foreground tabular-nums">{formatBRL(r.valor / 12)}/mês</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="hidden items-center gap-1 sm:flex" onClick={e => e.stopPropagation()}>
                     <button
                       type="button"
                       role="switch"
@@ -228,10 +229,10 @@ export default function RendasClient({ userId, rendas: initial }: Props) {
 
       {modalOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center sm:p-4"
           onClick={e => { if (e.target === e.currentTarget) setModalOpen(false) }}
         >
-          <div className="bg-background rounded-xl border border-border w-full max-w-lg shadow-xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="bg-background rounded-t-2xl sm:rounded-xl border border-border w-full sm:max-w-lg shadow-xl p-5 sm:p-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pb-6 space-y-5 max-h-[92vh] overflow-y-auto">
             <h2 className="text-lg font-semibold">{editandoId ? 'Editar renda' : 'Nova renda'}</h2>
 
             <div className="space-y-4">
@@ -312,7 +313,30 @@ export default function RendasClient({ userId, rendas: initial }: Props) {
               {erro && <p className="text-sm text-red-600">{erro}</p>}
             </div>
 
-            <div className="flex gap-3 justify-end pt-2">
+            {editandoId && (() => {
+              const atual = rendas.find(x => x.id === editandoId)
+              if (!atual) return null
+              return (
+                <div className="flex gap-2 sm:hidden">
+                  <button
+                    type="button"
+                    onClick={() => { toggleAtivo(atual); setModalOpen(false) }}
+                    className="flex-1 px-3 py-2 rounded-md border border-border text-sm"
+                  >
+                    {atual.ativo ? 'Pausar renda' : 'Reativar renda'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => { if (await excluir(atual)) setModalOpen(false) }}
+                    className="flex-1 px-3 py-2 rounded-md border border-red-200 text-sm text-red-600"
+                  >
+                    Excluir
+                  </button>
+                </div>
+              )
+            })()}
+
+            <div className="flex gap-3 justify-end pt-2 [&>button]:flex-1 sm:[&>button]:flex-none">
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}

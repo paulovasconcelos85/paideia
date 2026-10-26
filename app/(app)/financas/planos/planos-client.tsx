@@ -180,10 +180,10 @@ export default function PlanosClient({ userId, planos, saldoMensal }: Props) {
 
       {modalOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center sm:p-4"
           onClick={e => { if (e.target === e.currentTarget) setModalOpen(false) }}
         >
-          <div className="bg-background rounded-xl border border-border w-full max-w-lg shadow-xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="bg-background rounded-t-2xl sm:rounded-xl border border-border w-full sm:max-w-lg shadow-xl p-5 sm:p-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pb-6 space-y-5 max-h-[92vh] overflow-y-auto">
             <h2 className="text-lg font-semibold">Novo plano</h2>
 
             <div className="space-y-2">
@@ -221,7 +221,7 @@ export default function PlanosClient({ userId, planos, saldoMensal }: Props) {
 
             {erro && <p className="text-sm text-red-600">{erro}</p>}
 
-            <div className="flex gap-3 justify-end pt-2">
+            <div className="flex gap-3 justify-end pt-2 [&>button]:flex-1 sm:[&>button]:flex-none">
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}

@@ -1,5 +1,5 @@
 import {
-  CATEGORIAS_DESPESA, despesaMensal, formatBRL, rendaMensal,
+  CATEGORIAS_DESPESA, despesaMensal, formatBRL, parcelasRestantes, rendaMensal, valorRestante,
   type Despesa, type Renda,
 } from './financas'
 
@@ -108,17 +108,19 @@ export function diagnosticar(despesas: Despesa[], rendas: Renda[]): Diagnostico 
   // 2. Comprometimento com dívidas
   if (renda > 0 && dividas > 0) {
     const p = pct(dividas, renda)
+    const saldoParcelado = ativas.reduce((a, d) => a + valorRestante(d), 0)
+    const faltam = saldoParcelado > 0 ? ` Ainda faltam ${formatBRL(saldoParcelado)} em parcelas a pagar.` : ''
     alertas.push({
       nivel: p > 30 ? 'critico' : p > 15 ? 'atencao' : 'oportunidade',
       titulo: `${p.toFixed(0)}% da renda vai para dívidas e parcelas`,
       texto: p > 30
-        ? `São ${formatBRL(dividas)} por mês. Acima de 30% é zona de risco. Priorize quitar ou renegociar as dívidas de juros mais altos (rotativo, cheque especial) e não faça nenhuma nova compra parcelada.`
-        : `São ${formatBRL(dividas)} por mês. Cada parcela que termina é dinheiro que pode ir para a poupança. Não substitua por nova parcela.`,
+        ? `São ${formatBRL(dividas)} por mês.${faltam} Acima de 30% é zona de risco. Priorize quitar ou renegociar as dívidas de juros mais altos (rotativo, cheque especial) e não faça nenhuma nova compra parcelada.`
+        : `São ${formatBRL(dividas)} por mês.${faltam} Cada parcela que termina é dinheiro que pode ir para a poupança. Não substitua por nova parcela.`,
     })
   }
 
   // 3. Parcelas que estão acabando
-  const acabando = ativas.filter(d => d.frequencia === 'parcelada' && d.parcelas_restantes !== null && d.parcelas_restantes <= 3)
+  const acabando = ativas.filter(d => (parcelasRestantes(d) ?? Infinity) <= 3)
   if (acabando.length > 0) {
     const liberado = acabando.reduce((a, d) => a + d.valor, 0)
     alertas.push({

@@ -3,8 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { carregarAiConfig, gerarTexto } from '@/lib/ai'
 import {
   CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, FREQUENCIA_RENDA_LABEL, MESES, STATUS_PLANO, TIPOS_RENDA,
-  despesaMensal, formatBRL, formatMesAno, formatMoeda, projetarPlano,
-  type Despesa, type Plano, type Renda,
+  despesaMensal, fimParcelas, formatBRL, formatMesAno, formatMoeda, parcelasRestantes, projetarPlano, valorRestante,
+  type Cartao, type Despesa, type Plano, type Renda,
 } from '@/lib/financas'
 import { diagnosticar } from '@/lib/financas-diagnostico'
 
@@ -53,11 +53,14 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}))
   const contexto = typeof body.contexto === 'string' ? body.contexto.trim().slice(0, 2000) : ''
 
-  const [{ data: despesasData }, { data: rendasData }, { data: planosData }] = await Promise.all([
+  const [{ data: despesasData }, { data: rendasData }, { data: planosData }, { data: cartoesData }] = await Promise.all([
     supabase.from('fin_despesas').select('*').eq('user_id', user.id).eq('ativo', true),
     supabase.from('fin_rendas').select('*').eq('user_id', user.id).eq('ativo', true),
     supabase.from('fin_planos').select('*').eq('user_id', user.id).neq('status', 'concluido'),
+    supabase.from('fin_cartoes').select('*').eq('user_id', user.id),
   ])
+  const cartoes = (cartoesData ?? []) as Cartao[]
+  const nomeCartao = (id: string | null) => cartoes.find(c => c.id === id)?.nome
   const despesas = (despesasData ?? []) as Despesa[]
   const rendas = (rendasData ?? []) as Renda[]
   const planos = (planosData ?? []) as Plano[]
@@ -75,7 +78,8 @@ export async function POST(request: Request) {
   const linhasDespesa = despesas.map(x =>
     `- [${CATEGORIAS_DESPESA[x.categoria]?.label ?? x.categoria}] ${x.descricao}: ${formatBRL(x.valor)} ` +
     `(${FREQUENCIA_DESPESA_LABEL[x.frequencia].toLowerCase()}` +
-    `${x.frequencia === 'parcelada' && x.parcelas_restantes !== null ? `, ${x.parcelas_restantes} parcelas restantes` : ''}` +
+    `${parcelasRestantes(x) ? `, faltam ${parcelasRestantes(x)} parcelas (${formatBRL(valorRestante(x))}), última em ${formatMesAno(fimParcelas(x)!)}` : ''}` +
+    `${nomeCartao(x.cartao_id) ? `, no cartão ${nomeCartao(x.cartao_id)}` : ''}` +
     `${x.frequencia === 'anual' ? `, ${formatBRL(despesaMensal(x))}/mês diluído` : ''}` +
     `, ${x.essencial ? 'essencial' : 'não essencial'})` +
     `${x.observacoes ? `. Obs.: ${x.observacoes}` : ''}`

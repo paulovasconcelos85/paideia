@@ -11,11 +11,24 @@ export interface Despesa {
   categoria: string
   valor: number
   frequencia: FrequenciaDespesa
-  parcelas_restantes: number | null
+  parcelas_restantes: number | null // vale para o mês parcelas_ref; use parcelasRestantes() para hoje
+  parcelas_total: number | null
+  parcelas_ref: string | null
+  cartao_id: string | null
   dia_vencimento: number | null
   essencial: boolean
   ativo: boolean
   observacoes: string | null
+  created_at: string
+}
+
+export interface Cartao {
+  id: string
+  user_id: string
+  nome: string
+  dia_vencimento: number | null
+  dia_fechamento: number | null
+  limite: number | null
   created_at: string
 }
 
@@ -93,12 +106,51 @@ export function parseBRL(texto: string): number | null {
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null
 }
 
+type DespesaParcelas = Pick<Despesa, 'frequencia' | 'parcelas_restantes' | 'parcelas_ref'>
+
+/** Parcelas que faltam pagar a partir do mês de hoje (incluindo a deste mês). null se não for parcelada. */
+export function parcelasRestantes(d: DespesaParcelas, hoje = new Date()): number | null {
+  if (d.frequencia !== 'parcelada' || d.parcelas_restantes === null) return null
+  const ref = d.parcelas_ref ? new Date(`${d.parcelas_ref}T12:00:00`) : hoje
+  return Math.max(d.parcelas_restantes - Math.max(mesesEntre(ref, hoje), 0), 0)
+}
+
+/** Quanto ainda falta pagar de uma compra parcelada. */
+export function valorRestante(d: DespesaParcelas & Pick<Despesa, 'valor' | 'ativo'>, hoje = new Date()): number {
+  if (!d.ativo) return 0
+  return (parcelasRestantes(d, hoje) ?? 0) * d.valor
+}
+
+/** Mês da última parcela. */
+export function fimParcelas(d: DespesaParcelas, hoje = new Date()): Date | null {
+  const r = parcelasRestantes(d, hoje)
+  return r ? new Date(hoje.getFullYear(), hoje.getMonth() + r - 1, 1) : null
+}
+
 /** Valor da despesa diluído por mês — anuais viram 1/12 para o planejamento. */
-export function despesaMensal(d: Pick<Despesa, 'valor' | 'frequencia' | 'parcelas_restantes' | 'ativo'>): number {
+export function despesaMensal(d: DespesaParcelas & Pick<Despesa, 'valor' | 'ativo'>, hoje = new Date()): number {
   if (!d.ativo) return 0
   if (d.frequencia === 'anual') return d.valor / 12
-  if (d.frequencia === 'parcelada' && d.parcelas_restantes === 0) return 0
+  if (d.frequencia === 'parcelada' && parcelasRestantes(d, hoje) === 0) return 0
   return d.valor
+}
+
+/**
+ * Quanto será cobrado em cada um dos próximos meses (0 = mês atual): recorrentes + parcelas ainda correndo.
+ * Anuais ficam de fora porque caem num único mês, que não registramos.
+ */
+export function projetarGastosMensais(despesas: Despesa[], meses = 12, hoje = new Date()): number[] {
+  return Array.from({ length: meses }, (_, i) =>
+    despesas.reduce((total, d) => {
+      if (!d.ativo) return total
+      if (d.frequencia === 'mensal') return total + d.valor
+      if (d.frequencia === 'parcelada') {
+        const r = parcelasRestantes(d, hoje)
+        return r === null || r > i ? total + d.valor : total // sem total informado: segue cobrando
+      }
+      return total
+    }, 0)
+  )
 }
 
 /** Renda diluída por mês. Eventuais ficam de fora: não se planeja com dinheiro incerto. */

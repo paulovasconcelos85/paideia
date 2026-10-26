@@ -362,7 +362,7 @@ export default function PlanoDetalhe({ plano, saldoMensal, aportesOutros }: Prop
               <button
                 type="button"
                 onClick={() => alterarEtapas(etapas.filter((_, idx) => idx !== i))}
-                className="p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-red-600"
+                className="p-0.5 text-muted-foreground sm:opacity-0 sm:group-hover:opacity-100 hover:text-red-600"
                 title="Remover"
               >
                 <X className="w-4 h-4" />
