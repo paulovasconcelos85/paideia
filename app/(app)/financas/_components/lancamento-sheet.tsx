@@ -91,7 +91,10 @@ export default function LancamentoSheet({
     setErro(null)
 
     const cartao = cartoes.find(c => c.id === cartaoId) ?? null
-    const competencia = competenciaDoGasto(data, cartao)
+    // Editando: fica no mês (fatura) em que já estava. A data de compras parceladas é a da compra
+    // original, então recalcular por ela jogaria a linha para meses atrás. Só muda se mudar data ou cartão.
+    const mesmoMes = lancamento && data === lancamento.data && (cartaoId || null) === lancamento.cartao_id
+    const competencia = mesmoMes ? lancamento.competencia : competenciaDoGasto(data, cartao)
     const desc = descricao.trim() || CATEGORIAS_DESPESA[categoria].label
 
     // Parcelado ou "todo mês" entra no orçamento, para o "quanto falta" e a projeção ficarem certos
