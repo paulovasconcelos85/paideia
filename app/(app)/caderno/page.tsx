@@ -1,9 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import CadernoClient from './caderno-client'
 
 export default async function CadernoPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getUser()
 
   const [
     { data: pensamentos },

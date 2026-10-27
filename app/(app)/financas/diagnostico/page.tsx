@@ -3,7 +3,7 @@ import {
   AlertOctagon, AlertTriangle, ArrowDownCircle, ArrowUpCircle, CheckCircle2, Circle,
   CircleDot, Lightbulb, PiggyBank, Scale,
 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { obterFamilia } from '@/lib/familia'
 import { buscarPtax } from '@/lib/cambio'
 import {
@@ -24,8 +24,7 @@ const ESTILO_ALERTA: Record<NivelAlerta, { icon: typeof AlertOctagon; className:
 
 export default async function DiagnosticoPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const familiaId = await obterFamilia(supabase)
+  const [user, familiaId] = await Promise.all([getUser(), obterFamilia(supabase)])
 
   const [{ data: despesas }, { data: rendas }, { data: planos }, { data: eixo }, { data: livros }, ptax] = await Promise.all([
     supabase.from('fin_despesas').select('*').eq('familia_id', familiaId),

@@ -23,11 +23,15 @@ export interface Patrimonio {
 }
 
 /** Tudo o que a família tem e deve, com o dólar avaliado pela PTAX do dia. */
-export async function carregarPatrimonio(supabase: SupabaseClient, familiaId: string, ptaxVenda: number | null): Promise<Patrimonio> {
-  const [{ data: contas }, { data: dividas }, { data: compras }] = await Promise.all([
+export async function carregarPatrimonio(
+  supabase: SupabaseClient, familiaId: string, cotacao: number | null | Promise<number | null>,
+): Promise<Patrimonio> {
+  // A cotação pode chegar como promessa, para a PTAX vir em paralelo com as consultas
+  const [{ data: contas }, { data: dividas }, { data: compras }, ptaxVenda] = await Promise.all([
     supabase.from('fin_contas').select('*').eq('familia_id', familiaId).order('saldo', { ascending: false }),
     supabase.from('fin_dividas').select('*').eq('familia_id', familiaId).order('saldo', { ascending: false }),
     supabase.from('fin_compras_dolar').select('*').eq('familia_id', familiaId).order('data', { ascending: false }),
+    cotacao,
   ])
 
   const listaContas = (contas ?? []) as Conta[]

@@ -1,9 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import ClubeClient, { type PostFeed } from './clube-client'
 
 export default async function ClubePage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getUser()
 
   const [{ data: pensamentos }, { data: citacoes }, { data: prosas }] = await Promise.all([
     supabase

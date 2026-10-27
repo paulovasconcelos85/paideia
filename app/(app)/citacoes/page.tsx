@@ -1,9 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import CitacoesClient from './citacoes-client'
 
 export default async function CitacoesPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getUser()
 
   const [{ data: citacoes }, { data: livros }] = await Promise.all([
     supabase

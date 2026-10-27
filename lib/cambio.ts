@@ -26,7 +26,8 @@ export async function buscarPtax(): Promise<Ptax | null> {
 
   try {
     // A PTAX sai uma vez por dia útil (~13h): uma hora de cache basta
-    const res = await fetch(url, { next: { revalidate: 3600 } })
+    // Se o BC estiver lento, a página não espera: segue sem cotação
+    const res = await fetch(url, { next: { revalidate: 3600 }, signal: AbortSignal.timeout(3000) })
     if (!res.ok) return null
     const json = await res.json() as { value?: { cotacaoCompra: number; cotacaoVenda: number; dataHoraCotacao: string }[] }
     const valores = json.value ?? []

@@ -43,18 +43,22 @@ export default function FixosSheet({ familiaId, userId, competencia, pendentes, 
     const ultimoDia = new Date(ano, mes, 0).getDate()
     const { data, error } = await supabase
       .from('fin_lancamentos')
-      .insert(escolhidos.map(d => ({
-        familia_id: familiaId,
-        user_id: userId,
-        data: `${competencia.slice(0, 8)}${String(Math.min(d.dia_vencimento ?? 1, ultimoDia)).padStart(2, '0')}`,
-        competencia,
-        descricao: d.descricao,
-        valor: d.valor,
-        categoria: d.categoria,
-        cartao_id: d.cartao_id,
-        origem: 'fixo',
-        despesa_id: d.id,
-      })))
+      .insert(escolhidos.map(d => {
+        const data = `${competencia.slice(0, 8)}${String(Math.min(d.dia_vencimento ?? 1, ultimoDia)).padStart(2, '0')}`
+        return {
+          familia_id: familiaId,
+          user_id: userId,
+          data,
+          vencimento: d.cartao_id ? null : data,
+          competencia,
+          descricao: d.descricao,
+          valor: d.valor,
+          categoria: d.categoria,
+          cartao_id: d.cartao_id,
+          origem: 'fixo',
+          despesa_id: d.id,
+        }
+      }))
       .select()
     setSaving(false)
     if (error || !data) return setErro('Não foi possível lançar os fixos.')

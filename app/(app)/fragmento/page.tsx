@@ -1,9 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import FragmentoClient from './fragmento-client'
 
 export default async function FragmentoPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getUser()
 
   const [{ data: notas }, { data: livros }] = await Promise.all([
     supabase

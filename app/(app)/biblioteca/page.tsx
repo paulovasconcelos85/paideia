@@ -1,9 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import BibliotecaClient from './biblioteca-client'
 
 export default async function BibliotecaPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getUser()
 
   const [{ data: livros }, { data: eixos }] = await Promise.all([
     supabase

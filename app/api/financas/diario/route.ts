@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { carregarAiConfig } from '@/lib/ai'
 import { buscarPtax } from '@/lib/cambio'
 import { gerarCarta } from '@/lib/carta'
-import { MESES, formatBRL, type Cartao, type Despesa, type Renda } from '@/lib/financas'
+import { MESES, faturaPagaNoMes, formatBRL, type Cartao, type Despesa, type Renda } from '@/lib/financas'
 import { enviarPush } from '@/lib/push'
 
 export const maxDuration = 300
@@ -16,6 +16,7 @@ function hojeBrasil() {
 }
 
 const isoMes = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+const isoDia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 /** Próxima data em que cai um "dia X" do mês (ajusta meses curtos). */
 function proximoDia(hoje: Date, dia: number) {
@@ -75,24 +76,36 @@ export async function GET(request: Request) {
   // ── Lembretes: só para famílias com algum aparelho inscrito
   const ids = Array.from(comPush)
   if (ids.length > 0) {
-    const [{ data: cartoes }, { data: despesas }, { data: rendas }, { data: lancamentos }] = await Promise.all([
+    const amanhaISO = isoDia(new Date(hoje.getTime() + 86400000))
+    const [{ data: cartoes }, { data: despesas }, { data: rendas }, { data: lancamentos }, { data: faturasPagas }, { data: aPagar }] = await Promise.all([
       supabase.from('fin_cartoes').select('*').in('familia_id', ids),
       supabase.from('fin_despesas').select('*').in('familia_id', ids).eq('ativo', true).is('cartao_id', null),
       supabase.from('fin_rendas').select('*').in('familia_id', ids).eq('ativo', true).eq('frequencia', 'anual'),
-      supabase.from('fin_lancamentos').select('familia_id, cartao_id, despesa_id, valor').in('familia_id', ids).eq('competencia', competencia),
+      supabase.from('fin_lancamentos').select('familia_id, cartao_id, despesa_id, valor, competencia').in('familia_id', ids)
+        .in('competencia', [isoMes(new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)), competencia]),
+      supabase.from('fin_faturas').select('cartao_id, competencia').in('familia_id', ids),
+      // Lançadas como "a pagar" que vencem amanhã
+      supabase.from('fin_lancamentos').select('familia_id, descricao, valor').in('familia_id', ids)
+        .is('cartao_id', null).eq('pago', false).eq('vencimento', amanhaISO),
     ])
+    const faturaPaga = new Set((faturasPagas ?? []).map(f => `${f.cartao_id}|${String(f.competencia).slice(0, 10)}`))
 
     for (const familiaId of ids) {
       const avisos: { titulo: string; corpo: string; url: string; tag: string }[] = []
       const lancFamilia = (lancamentos ?? []).filter(l => l.familia_id === familiaId)
+      const lancMes = lancFamilia.filter(l => String(l.competencia).slice(0, 10) === competencia)
 
       // Fatura vencendo em 3 dias
       for (const c of ((cartoes ?? []) as (Cartao & { familia_id: string })[]).filter(c => c.familia_id === familiaId && c.dia_vencimento)) {
-        if (diasAte(hoje, proximoDia(hoje, c.dia_vencimento!)) === 3) {
-          const lancado = lancFamilia.filter(l => l.cartao_id === c.id).reduce((a, l) => a + Number(l.valor), 0)
+        const vence = proximoDia(hoje, c.dia_vencimento!)
+        if (diasAte(hoje, vence) === 3) {
+          // Qual fatura vence nessa data; se já foi paga, não lembra
+          const fatura = faturaPagaNoMes(c, isoMes(vence))
+          if (faturaPaga.has(`${c.id}|${fatura}`)) continue
+          const lancado = lancFamilia.filter(l => l.cartao_id === c.id && String(l.competencia).slice(0, 10) === fatura).reduce((a, l) => a + Number(l.valor), 0)
           avisos.push({
             titulo: `Fatura do ${c.nome} vence em 3 dias`,
-            corpo: lancado > 0 ? `${formatBRL(lancado)} lançados neste mês. Separe o valor para pagar o total.` : 'Pague o total para fugir dos juros do rotativo.',
+            corpo: lancado > 0 ? `${formatBRL(lancado)} lançados nesta fatura. Separe o valor para pagar o total.` : 'Pague o total para fugir dos juros do rotativo.',
             url: '/financas/mes',
             tag: `fatura-${c.id}`,
           })
@@ -100,11 +113,14 @@ export async function GET(request: Request) {
       }
 
       // Contas fora do cartão que vencem amanhã e ainda não foram lançadas
-      const lancadas = new Set(lancFamilia.map(l => l.despesa_id).filter(Boolean))
-      const amanha = ((despesas ?? []) as (Despesa & { familia_id: string })[]).filter(d =>
-        d.familia_id === familiaId && d.frequencia !== 'anual' && d.dia_vencimento &&
-        !lancadas.has(d.id) && diasAte(hoje, proximoDia(hoje, d.dia_vencimento)) === 1
-      )
+      const lancadas = new Set(lancMes.map(l => l.despesa_id).filter(Boolean))
+      const amanha: { descricao: string; valor: number }[] = [
+        ...((despesas ?? []) as (Despesa & { familia_id: string })[]).filter(d =>
+          d.familia_id === familiaId && d.frequencia !== 'anual' && d.dia_vencimento &&
+          !lancadas.has(d.id) && diasAte(hoje, proximoDia(hoje, d.dia_vencimento)) === 1
+        ),
+        ...(aPagar ?? []).filter(l => l.familia_id === familiaId),
+      ]
       if (amanha.length > 0) {
         avisos.push({
           titulo: amanha.length === 1 ? `${amanha[0].descricao} vence amanhã` : `${amanha.length} contas vencem amanhã`,

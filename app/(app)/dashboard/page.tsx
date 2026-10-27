@@ -1,13 +1,15 @@
-import { createClient } from '@/lib/supabase/server'
+import { Suspense } from 'react'
+import { createClient, getUser } from '@/lib/supabase/server'
 import type { DashboardStats } from '@/lib/types'
 import { BookOpen, BookMarked, ShoppingCart, Star } from 'lucide-react'
 import EixoProgressCard from '@/components/eixo-progress-card'
 import RelogioVida from '@/components/relogio-vida'
 import DevocionalDia from '@/components/devocional-dia'
+import { Bloco } from '@/components/carregando'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getUser()
 
   const [{ data: livros }, { data: eixos }, { data: profile }] = await Promise.all([
     supabase.from('livros').select('status, nota, eixo_id').eq('user_id', user!.id),
@@ -58,7 +60,9 @@ export default async function DashboardPage() {
       </div>
 
       {/* Devocional do dia */}
-      <DevocionalDia />
+      <Suspense fallback={<Bloco className="h-40 w-full rounded-lg" />}>
+        <DevocionalDia />
+      </Suspense>
 
       {/* Relógio da vida */}
       {profile?.data_nascimento && (

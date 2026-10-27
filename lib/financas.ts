@@ -280,7 +280,15 @@ export interface Lancamento {
   origem: 'manual' | 'fatura' | 'fixo'
   despesa_id: string | null
   essencial: boolean | null // null = padrão da categoria
+  vencimento: string | null // quando o dinheiro sai; null = na data da compra. No cartão, vale o da fatura
+  pago: boolean // fora do cartão; no cartão, quem diz é a fatura (fin_faturas)
   created_at: string
+}
+
+/** Fatura marcada como paga (a linha existir já é o "pago"). */
+export interface FaturaPaga {
+  cartao_id: string
+  competencia: string
 }
 
 export type TipoConta = 'conta' | 'poupanca' | 'reserva' | 'investimento' | 'dolar' | 'bem' | 'outro'
@@ -404,4 +412,36 @@ export function fraseCustoEmTempo(valor: number, plano: Plano | null, rendaMensa
   if (horas !== null) partes.push(`${horas < 1 ? 'menos de 1' : Math.round(horas)} h de trabalho`)
   if (dias !== null && nome) partes.push(`${dias < 1 ? 'menos de 1 dia' : `${Math.round(dias)} ${Math.round(dias) === 1 ? 'dia' : 'dias'}`} a mais até "${nome}"`)
   return partes.length ? partes.join(' · ') : null
+}
+
+/** Dia X de um mês (YYYY-MM-01) como data YYYY-MM-DD, ajustado para meses curtos. */
+export function diaNoMes(competencia: string, dia: number): string {
+  const [ano, mes] = competencia.split('-').map(Number)
+  const ultimo = new Date(ano, mes, 0).getDate()
+  return `${competencia.slice(0, 8)}${String(Math.min(dia, ultimo)).padStart(2, '0')}`
+}
+
+/** Mês (YYYY-MM-01) somado de alguns meses. */
+export function somarMeses(competencia: string, delta: number): string {
+  const d = new Date(`${competencia}T12:00:00`)
+  return competenciaISO(new Date(d.getFullYear(), d.getMonth() + delta, 1))
+}
+
+// A fatura fecha no mês da competência; se o dia do vencimento vem antes do fechamento, vence no mês seguinte
+const venceNoMesSeguinte = (c: Pick<Cartao, 'dia_vencimento' | 'dia_fechamento'>) =>
+  !!c.dia_vencimento && !!c.dia_fechamento && c.dia_vencimento <= c.dia_fechamento
+
+/** Data de vencimento da fatura de um mês. null se o cartão não tiver dia de vencimento. */
+export function vencimentoFatura(c: Pick<Cartao, 'dia_vencimento' | 'dia_fechamento'>, competencia: string): string | null {
+  if (!c.dia_vencimento) return null
+  return diaNoMes(venceNoMesSeguinte(c) ? somarMeses(competencia, 1) : competencia, c.dia_vencimento)
+}
+
+/** Qual fatura (competência) do cartão é paga dentro de um mês. */
+export function faturaPagaNoMes(c: Pick<Cartao, 'dia_vencimento' | 'dia_fechamento'>, mes: string): string {
+  return venceNoMesSeguinte(c) ? somarMeses(mes, -1) : mes
+}
+
+export function formatDiaMes(dataISO: string): string {
+  return new Date(`${dataISO}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
 }

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { obterFamilia } from '@/lib/familia'
 import { buscarPtax } from '@/lib/cambio'
 import type { Despesa, Plano, Renda } from '@/lib/financas'
@@ -7,8 +7,7 @@ import PlanosClient from './planos-client'
 
 export default async function PlanosPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const familiaId = await obterFamilia(supabase)
+  const [user, familiaId] = await Promise.all([getUser(), obterFamilia(supabase)])
 
   const [{ data: planos }, { data: despesas }, { data: rendas }, ptax] = await Promise.all([
     supabase.from('fin_planos').select('*').eq('familia_id', familiaId)

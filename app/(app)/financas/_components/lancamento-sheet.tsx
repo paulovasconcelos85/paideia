@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, CreditCard, Hourglass } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  CATEGORIAS_DESPESA, CATEGORIAS_SUPERFLUAS, competenciaISO, formatBRL, formatMesAno, fraseCustoEmTempo, hojeISO, parseBRL,
+  CATEGORIAS_DESPESA, CATEGORIAS_SUPERFLUAS, competenciaISO, formatBRL, formatDiaMes, formatMesAno, fraseCustoEmTempo, hojeISO,
+  nomeMes, parseBRL, vencimentoFatura,
   type Cartao, type Lancamento, type Plano,
 } from '@/lib/financas'
 import Sheet from './sheet'
@@ -46,7 +47,13 @@ export default function LancamentoSheet({
   const [categoria, setCategoria] = useState(lancamento?.categoria ?? 'supermercado')
   const [cartaoId, setCartaoId] = useState<string>(lancamento?.cartao_id ?? cartaoPadrao ?? '')
   const [descricao, setDescricao] = useState(lancamento?.descricao ?? '')
-  const [data, setData] = useState(lancamento?.data ?? hojeISO())
+  const [data, setData] = useState(lancamento?.data ?? hojeISO()) // data da compra
+  // Fora do cartão: quando o dinheiro sai. Sem escolha própria, acompanha a data da compra
+  const [vencimentoProprio, setVencimento] = useState<string | null>(
+    lancamento?.vencimento && lancamento.vencimento !== lancamento.data ? lancamento.vencimento : null
+  )
+  // Pago ou a pagar: segue a data (já passou = pago) até a pessoa marcar à mão
+  const [pagoManual, setPagoManual] = useState<boolean | null>(lancamento ? lancamento.pago : null)
   const [todasCategorias, setTodasCategorias] = useState(!CATEGORIAS_RAPIDAS.includes(lancamento?.categoria ?? 'supermercado'))
   // Essencial: segue a categoria até a pessoa marcar à mão
   const [essencialManual, setEssencialManual] = useState<boolean | null>(lancamento?.essencial ?? null)
@@ -75,6 +82,12 @@ export default function LancamentoSheet({
     }
   }, [lancamento, cartaoPadrao, cartoes])
 
+  const vencimento = vencimentoProprio ?? data
+  const pago = pagoManual ?? vencimento <= hojeISO()
+  const cartaoEscolhido = cartoes.find(c => c.id === cartaoId) ?? null
+  const faturaPrevista = cartaoEscolhido ? competenciaDoGasto(data, cartaoEscolhido) : null
+  const venceFatura = cartaoEscolhido && faturaPrevista ? vencimentoFatura(cartaoEscolhido, faturaPrevista) : null
+
   const valorNum = parseBRL(valor) ?? 0
   const essencial = essencialManual ?? !CATEGORIAS_SUPERFLUAS.has(categoria)
   const custo = !essencial ? fraseCustoEmTempo(valorNum, planoPrincipal, rendaMensal) : null
@@ -90,11 +103,13 @@ export default function LancamentoSheet({
     setSaving(true)
     setErro(null)
 
-    const cartao = cartoes.find(c => c.id === cartaoId) ?? null
+    const cartao = cartaoEscolhido
     // Editando: fica no mês (fatura) em que já estava. A data de compras parceladas é a da compra
-    // original, então recalcular por ela jogaria a linha para meses atrás. Só muda se mudar data ou cartão.
-    const mesmoMes = lancamento && data === lancamento.data && (cartaoId || null) === lancamento.cartao_id
-    const competencia = mesmoMes ? lancamento.competencia : competenciaDoGasto(data, cartao)
+    // original, então recalcular por ela jogaria a linha para meses atrás. Só muda se mudar data, vencimento ou cartão.
+    const mesmoMes = lancamento && data === lancamento.data && (cartaoId || null) === lancamento.cartao_id &&
+      (cartao || vencimento === (lancamento.vencimento ?? lancamento.data))
+    // No cartão, o mês é o da fatura; fora dele, o mês em que o dinheiro sai
+    const competencia = mesmoMes ? lancamento.competencia : competenciaDoGasto(cartao ? data : vencimento, cartao)
     const desc = descricao.trim() || CATEGORIAS_DESPESA[categoria].label
 
     // Parcelado ou "todo mês" entra no orçamento, para o "quanto falta" e a projeção ficarem certos
@@ -114,7 +129,7 @@ export default function LancamentoSheet({
           parcelas_restantes: tipo === 'parcelado' ? restantes : null,
           parcelas_ref: tipo === 'parcelado' ? competencia : null,
           cartao_id: cartaoId || null,
-          dia_vencimento: !cartaoId ? new Date(`${data}T12:00:00`).getDate() : null,
+          dia_vencimento: !cartaoId ? new Date(`${vencimento}T12:00:00`).getDate() : null,
           essencial,
         })
         .select('id')
@@ -154,6 +169,9 @@ export default function LancamentoSheet({
       descricao: desc,
       data,
       competencia,
+      // No cartão, vencimento e status são os da fatura
+      vencimento: cartao ? null : vencimento,
+      pago: cartao ? true : pago,
       essencial,
       parcela_atual: tipo === 'parcelado' ? atual : null,
       parcelas_total: tipo === 'parcelado' ? total : null,
@@ -175,6 +193,8 @@ export default function LancamentoSheet({
     setDescricao('')
     setTipo('avulso')
     setEssencialManual(null)
+    setVencimento(null)
+    setPagoManual(null)
     setParcelaAtual('1')
     setParcelasTotal('')
     valorRef.current?.focus()
@@ -255,19 +275,64 @@ export default function LancamentoSheet({
           </div>
         </div>
 
-        <div className="grid grid-cols-[1fr_auto] gap-3">
-          <input
-            value={descricao}
-            onChange={e => setDescricao(e.target.value)}
-            placeholder={`Descrição (opcional): ${CATEGORIAS_DESPESA[categoria].label}`}
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <input
-            type="date"
-            value={data}
-            onChange={e => setData(e.target.value)}
-            className="rounded-md border border-border bg-background px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
+        <input
+          value={descricao}
+          onChange={e => setDescricao(e.target.value)}
+          placeholder={`Descrição (opcional): ${CATEGORIAS_DESPESA[categoria].label}`}
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+
+        {/* Quando comprou e quando o dinheiro sai */}
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Data da compra</span>
+              <input
+                type="date"
+                value={data}
+                onChange={e => setData(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </label>
+            {!cartaoEscolhido && (
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">{pago ? 'Pago em' : 'Vence em'}</span>
+                <input
+                  type="date"
+                  value={vencimento}
+                  onChange={e => setVencimento(e.target.value && e.target.value !== data ? e.target.value : null)}
+                  className="w-full rounded-md border border-border bg-background px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+            )}
+          </div>
+          {cartaoEscolhido ? (
+            <p className="text-xs text-muted-foreground">
+              Entra na fatura de <strong>{nomeMes(faturaPrevista!).toLowerCase()}</strong>
+              {venceFatura ? <>, que vence em <strong>{formatDiaMes(venceFatura)}</strong></> : ''}. Marque a fatura como paga em Mês → Saídas.
+            </p>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPagoManual(true)}
+                className={`flex-1 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  pago ? 'border-green-300 bg-green-50 font-medium text-green-800' : 'border-border hover:bg-secondary'
+                }`}
+              >
+                ✓ Pago
+              </button>
+              <button
+                type="button"
+                onClick={() => setPagoManual(false)}
+                className={`flex-1 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  !pago ? 'border-amber-300 bg-amber-50 font-medium text-amber-800' : 'border-border hover:bg-secondary'
+                }`}
+              >
+                A pagar
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Detalhes: essencial e se é parcelado ou se repete */}

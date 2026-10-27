@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { obterFamilia } from '@/lib/familia'
 import {
   competenciaISO, planoPrincipal, rendaMensal,
@@ -8,8 +8,7 @@ import GastosClient from './gastos-client'
 
 export default async function GastosPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const familiaId = await obterFamilia(supabase)
+  const [user, familiaId] = await Promise.all([getUser(), obterFamilia(supabase)])
 
   const [{ data: despesas }, { data: cartoes }, { data: lancamentos }, { data: planos }, { data: rendas }] = await Promise.all([
     supabase.from('fin_despesas').select('*').eq('familia_id', familiaId).order('valor', { ascending: false }),

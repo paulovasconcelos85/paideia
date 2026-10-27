@@ -4,11 +4,14 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronLeft, ChevronRight, CreditCard, FileUp, ListChecks, Plus, SlidersHorizontal } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 import {
-  CATEGORIAS_DESPESA, despesaMensal, espelharLancamento, formatBRL, lancamentoEssencial, nomeMes, parcelasRestantes,
-  type Cartao, type Despesa, type Lancamento, type Plano,
+  CATEGORIAS_DESPESA, despesaMensal, espelharLancamento, formatBRL, formatDiaMes, hojeISO, lancamentoEssencial, nomeMes, parcelasRestantes,
+  type Cartao, type Despesa, type FaturaPaga, type Lancamento, type Plano,
 } from '@/lib/financas'
+import { dataPagamento, montarSaidas, type Saida } from '@/lib/saidas'
 import LancamentoSheet from '../_components/lancamento-sheet'
+import SaidasLista from './saidas-lista'
 import ImportarFatura from './importar-fatura'
 import TetosSheet from './tetos-sheet'
 import FixosSheet from './fixos-sheet'
@@ -24,6 +27,9 @@ interface Props {
   plano: Plano | null
   renda: number
   cartaoInicial: string | null // vindo de Gastos fixos: abre a lista daquele cartão
+  faturasPagas: FaturaPaga[]
+  faturaAnterior: Pick<Lancamento, 'cartao_id' | 'valor'>[]
+  atrasados: Lancamento[] // fora do cartão, pendentes de meses anteriores
 }
 
 function mesVizinho(competencia: string, delta: number) {
@@ -34,8 +40,10 @@ function mesVizinho(competencia: string, delta: number) {
 
 export default function MesClient({
   familiaId, userId, competencia, tetos: tetosIniciais, lancamentos: iniciais, cartoes, despesas, plano, renda, cartaoInicial,
+  faturasPagas: faturasIniciais, faturaAnterior, atrasados: atrasadosIniciais,
 }: Props) {
   const router = useRouter()
+  const supabase = createClient()
   const [, startTransition] = useTransition()
   const [brutos, setLancamentos] = useState(iniciais)
   useEffect(() => { setLancamentos(iniciais) }, [iniciais])
@@ -44,7 +52,13 @@ export default function MesClient({
   const [tetos, setTetos] = useState(tetosIniciais)
   const [aberta, setAberta] = useState<string | null>(null)
   // Por categoria (resumo) ou em lista (todas as linhas, para conferir com a fatura)
-  const [visao, setVisao] = useState<'categorias' | 'lista'>(cartaoInicial ? 'lista' : 'categorias')
+  const [visao, setVisao] = useState<'categorias' | 'lista' | 'saidas'>(cartaoInicial ? 'lista' : 'categorias')
+  const [faturasPagas, setFaturasPagas] = useState(faturasIniciais)
+  useEffect(() => { setFaturasPagas(faturasIniciais) }, [faturasIniciais])
+  const [atrasadosBrutos, setAtrasados] = useState(atrasadosIniciais)
+  useEffect(() => { setAtrasados(atrasadosIniciais) }, [atrasadosIniciais])
+  const atrasados = useMemo(() => atrasadosBrutos.map(l => espelharLancamento(l, despesas)), [atrasadosBrutos, despesas])
+  const [ocupadas, setOcupadas] = useState<Set<string>>(new Set())
   const [filtro, setFiltro] = useState<string>(cartaoInicial ?? 'todos') // 'todos' | 'fora' | id do cartão
   const [sheet, setSheet] = useState<'novo' | 'fatura' | 'tetos' | 'fixos' | null>(null)
   const [editando, setEditando] = useState<Lancamento | null>(null)
@@ -64,6 +78,12 @@ export default function MesClient({
     d.ativo && !lancadosIds.has(d.id) &&
     (d.frequencia === 'mensal' || (d.frequencia === 'parcelada' && (parcelasRestantes(d, new Date(`${competencia}T12:00:00`)) ?? 1) > 0))
   )
+
+  // O que sai da conta neste mês, pela data em que sai
+  const saidas = montarSaidas({ mes: competencia, lancamentos, atrasados, cartoes, faturasPagas, faturaAnterior, fixosPendentes })
+  const hoje = hojeISO()
+  const faltaSair = saidas.filter(s => !s.pago).reduce((a, s) => a + s.valor, 0)
+  const vencidas = saidas.filter(s => !s.pago && s.data && s.data < hoje).length
 
   const porCategoria = Object.keys(CATEGORIAS_DESPESA)
     .map(cat => {
@@ -86,6 +106,7 @@ export default function MesClient({
   const filtrar = (f: string) => { setFiltro(f); setVisao('lista') }
 
   function aoSalvar(l: Lancamento) {
+    setAtrasados(prev => prev.map(x => x.id === l.id ? l : x).filter(x => !x.pago && !x.cartao_id && x.competencia < competencia))
     setLancamentos(prev => {
       const existe = prev.some(x => x.id === l.id)
       const lista = existe ? prev.map(x => x.id === l.id ? l : x) : [l, ...prev]
@@ -93,6 +114,61 @@ export default function MesClient({
     })
     setEditando(null) // edição fecha; lançamento novo deixa a janela aberta para o próximo
     refresh()
+  }
+
+  async function marcar(s: Saida, fn: () => Promise<{ error: unknown }>) {
+    setOcupadas(prev => new Set(prev).add(s.chave))
+    const { error } = await fn()
+    setOcupadas(prev => { const n = new Set(prev); n.delete(s.chave); return n })
+    if (error) alert('Não foi possível atualizar. Tente de novo.')
+    return !error
+  }
+
+  // Círculo da lista de saídas: paga ou volta para pendente
+  async function alternar(s: Saida) {
+    if (s.tipo === 'conta' && s.lancamento) {
+      const l = s.lancamento
+      const ok = await marcar(s, async () => await supabase.from('fin_lancamentos').update({ pago: !l.pago }).eq('id', l.id))
+      if (!ok) return
+      const trocar = (x: Lancamento) => x.id === l.id ? { ...x, pago: !l.pago } : x
+      setLancamentos(prev => prev.map(trocar))
+      setAtrasados(prev => prev.map(trocar))
+    } else if (s.tipo === 'fatura' && s.cartao && s.competenciaFatura) {
+      const cartaoId = s.cartao.id, comp = s.competenciaFatura
+      const ok = await marcar(s, async () => s.pago
+        ? await supabase.from('fin_faturas').delete().eq('cartao_id', cartaoId).eq('competencia', comp)
+        : await supabase.from('fin_faturas').insert({ familia_id: familiaId, cartao_id: cartaoId, competencia: comp }))
+      if (!ok) return
+      setFaturasPagas(prev => s.pago
+        ? prev.filter(f => !(f.cartao_id === cartaoId && f.competencia.slice(0, 10) === comp))
+        : [...prev, { cartao_id: cartaoId, competencia: comp }])
+    } else if (s.tipo === 'previsto' && s.despesa) {
+      // Fixo do orçamento pago: vira lançamento do mês, já marcado como pago
+      const d = s.despesa
+      const data = s.data ?? (hoje.slice(0, 7) === competencia.slice(0, 7) ? hoje : competencia)
+      let salvo: Lancamento | null = null
+      const ok = await marcar(s, async () => {
+        const r = await supabase.from('fin_lancamentos').insert({
+          familia_id: familiaId, user_id: userId, data, vencimento: data, competencia, pago: true,
+          descricao: d.descricao, valor: d.valor, categoria: d.categoria, cartao_id: null, origem: 'fixo', despesa_id: d.id,
+        }).select().single()
+        salvo = r.data as Lancamento | null
+        return r
+      })
+      if (!ok || !salvo) return
+      const novo: Lancamento = salvo
+      setLancamentos(prev => [novo, ...prev])
+    }
+    refresh()
+  }
+
+  function abrir(s: Saida) {
+    if (s.lancamento) return setEditando(s.lancamento)
+    if (s.tipo === 'previsto') return setSheet('fixos')
+    if (s.cartao && s.competenciaFatura) {
+      if (s.competenciaFatura === competencia) return filtrar(s.cartao.id)
+      router.push(`/financas/mes?mes=${s.competenciaFatura.slice(0, 7)}&cartao=${s.cartao.id}`)
+    }
   }
 
   function aoImportar(novos: Lancamento[]) {
@@ -146,6 +222,21 @@ export default function MesClient({
             </p>
           </>
         )}
+        {faltaSair > 0 && (
+          <button
+            type="button"
+            onClick={() => setVisao('saidas')}
+            className="flex w-full items-center justify-between gap-2 border-t border-border pt-3 text-left text-sm"
+          >
+            <span className="text-muted-foreground">
+              Falta sair da conta
+              {vencidas > 0 && <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{vencidas} {vencidas === 1 ? 'vencida' : 'vencidas'}</span>}
+            </span>
+            <span className="flex items-center gap-1 font-semibold tabular-nums">
+              {formatBRL(faltaSair)} <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </span>
+          </button>
+        )}
       </div>
 
       {(porCartao.length > 0 || foraDoCartao !== 0) && (
@@ -182,17 +273,17 @@ export default function MesClient({
       </div>
 
       {/* Resumo por categoria ou todas as linhas */}
-      {lancamentos.length > 0 && (
+      {(lancamentos.length > 0 || saidas.length > 0) && (
         <div className="flex items-center justify-between gap-2">
           <div className="inline-flex rounded-lg bg-secondary p-1">
-            {(['categorias', 'lista'] as const).map(v => (
+            {(['categorias', 'lista', 'saidas'] as const).map(v => (
               <button
                 key={v}
                 type="button"
                 onClick={() => setVisao(v)}
                 className={`rounded-md px-3 py-1.5 text-sm ${visao === v ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`}
               >
-                {v === 'categorias' ? 'Por categoria' : 'Todas as linhas'}
+                {v === 'categorias' ? 'Categorias' : v === 'lista' ? 'Linhas' : 'Saídas'}
               </button>
             ))}
           </div>
@@ -202,7 +293,9 @@ export default function MesClient({
         </div>
       )}
 
-      {visao === 'lista' ? (
+      {visao === 'saidas' ? (
+        <SaidasLista mes={competencia} saidas={saidas} ocupadas={ocupadas} onAlternar={alternar} onAbrir={abrir} />
+      ) : visao === 'lista' ? (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="flex items-center justify-between gap-2 border-b border-border bg-secondary/40 px-4 py-2.5 text-sm">
             <span>{filtrados.length} {filtrados.length === 1 ? 'lançamento' : 'lançamentos'}</span>
@@ -228,6 +321,7 @@ export default function MesClient({
                         </span>
                         {filtro === 'todos' && l.cartao_id && <span>{nomeCartao(l.cartao_id)}</span>}
                         {l.parcelas_total && <span>{l.parcela_atual}/{l.parcelas_total}</span>}
+                        {!l.cartao_id && !l.pago && <span className="rounded bg-amber-100 px-1.5 text-amber-800">a pagar · {formatDiaMes(dataPagamento(l))}</span>}
                       </p>
                     </div>
                     <span className={`text-sm tabular-nums ${Number(l.valor) < 0 ? 'text-green-700' : ''}`}>{formatBRL(Number(l.valor))}</span>
@@ -287,6 +381,7 @@ export default function MesClient({
                               {new Date(`${l.data}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
                               {l.cartao_id && <><CreditCard className="ml-1 h-3 w-3" /> {nomeCartao(l.cartao_id)}</>}
                               {l.parcelas_total && ` · ${l.parcela_atual}/${l.parcelas_total}`}
+                              {!l.cartao_id && !l.pago && <span className="ml-1 rounded bg-amber-100 px-1.5 text-amber-800">a pagar · {formatDiaMes(dataPagamento(l))}</span>}
                             </p>
                           </div>
                           <span className={`text-sm tabular-nums ${Number(l.valor) < 0 ? 'text-green-700' : ''}`}>{formatBRL(Number(l.valor))}</span>
@@ -319,7 +414,12 @@ export default function MesClient({
           rendaMensal={renda}
           lancamento={editando}
           onSaved={aoSalvar}
-          onDeleted={id => { setLancamentos(prev => prev.filter(l => l.id !== id)); setEditando(null); refresh() }}
+          onDeleted={id => {
+            setLancamentos(prev => prev.filter(l => l.id !== id))
+            setAtrasados(prev => prev.filter(l => l.id !== id))
+            setEditando(null)
+            refresh()
+          }}
           onClose={() => { setSheet(null); setEditando(null) }}
         />
       )}

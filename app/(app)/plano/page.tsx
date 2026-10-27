@@ -1,9 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import PlanoClient from './plano-client'
 
 export default async function PlanoPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getUser()
 
   const [{ data: planos }, { data: livrosBiblioteca }] = await Promise.all([
     supabase

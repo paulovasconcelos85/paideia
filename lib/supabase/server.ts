@@ -1,5 +1,6 @@
 import { createServerClient, type SetAllCookies } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { cache } from 'react'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -25,3 +26,10 @@ export async function createClient() {
     }
   )
 }
+
+/** Usuário logado, verificado uma única vez por requisição: layout e página compartilham a mesma chamada. */
+export const getUser = cache(async () => {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return user
+})

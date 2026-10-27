@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buscarPtax } from './cambio'
 import { simularQuitacao } from './dividas'
-import { registrarFechamento } from './familia'
+import { historicoPatrimonio } from './familia'
 import {
   CATEGORIAS_DESPESA, competenciaISO, despesaMensal, espelharLancamento, lancamentoEssencial, planoPrincipal, projetarPlano, rendaMensal,
-  type Cartao, type Despesa, type Fechamento, type Lancamento, type Plano, type Renda,
+  type Cartao, type Despesa, type Lancamento, type Plano, type Renda,
 } from './financas'
 import { diagnosticar, type Alerta } from './financas-diagnostico'
 import { carregarPatrimonio } from './patrimonio'
@@ -59,12 +59,13 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
   const agora = new Date()
   const competencia = competenciaISO(agora)
   const mesAnterior = competenciaISO(new Date(agora.getFullYear(), agora.getMonth() - 1, 1))
-  const ptax = await buscarPtax()
+  const ptaxPromise = buscarPtax()
 
   const [
-    { data: familia }, { data: despesas }, { data: rendas }, { data: planos }, { data: lancamentos },
+    ptax, { data: familia }, { data: despesas }, { data: rendas }, { data: planos }, { data: lancamentos },
     { data: lancAnterior }, patrimonio, { data: cartoes }, { data: membros }, { data: carta },
   ] = await Promise.all([
+    ptaxPromise,
     supabase.from('fin_familias').select('nome, tetos').eq('id', familiaId).single(),
     supabase.from('fin_despesas').select('*').eq('familia_id', familiaId),
     supabase.from('fin_rendas').select('*').eq('familia_id', familiaId),
@@ -72,7 +73,7 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
     supabase.from('fin_lancamentos').select('valor, categoria, essencial, descricao, despesa_id, competencia, parcela_atual, parcelas_total')
       .eq('familia_id', familiaId).eq('competencia', competencia),
     supabase.from('fin_lancamentos').select('valor').eq('familia_id', familiaId).eq('competencia', mesAnterior),
-    carregarPatrimonio(supabase, familiaId, ptax?.venda ?? null),
+    carregarPatrimonio(supabase, familiaId, ptaxPromise.then(p => p?.venda ?? null)),
     supabase.from('fin_cartoes').select('*').eq('familia_id', familiaId).order('created_at'),
     supabase.rpc('fin_membros_familia'),
     supabase.from('fin_cartas').select('texto').eq('familia_id', familiaId).eq('mes', competencia).maybeSingle(),
@@ -103,12 +104,8 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
   // ── O placar
   let patrimonioRetrato: Retrato['patrimonio'] = null
   if (patrimonio.temDados) {
-    await registrarFechamento(supabase, familiaId, patrimonio.ativos, patrimonio.passivos)
-    const { data: fechamentos } = await supabase
-      .from('fin_fechamentos').select('mes, ativos, dividas')
-      .eq('familia_id', familiaId).order('mes', { ascending: false }).limit(12)
-    const historico = ((fechamentos ?? []) as Fechamento[])
-      .reverse()
+    const fechamentos = await historicoPatrimonio(supabase, familiaId, patrimonio.ativos, patrimonio.passivos)
+    const historico = fechamentos
       .map(f => ({ mes: f.mes, valor: Number(f.ativos) - Number(f.dividas) }))
     const penultimo = historico.length >= 2 ? historico[historico.length - 2] : null
     patrimonioRetrato = {
