@@ -4,10 +4,10 @@ import { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ChevronRight, Map, Plus } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Map, Plus, Star } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  STATUS_PLANO, formatBRL, formatMesAno, formatMoeda, projetarPlano, type Plano,
+  STATUS_PLANO, formatBRL, formatMesAno, formatMoeda, nomeMes, planoPrincipal, projetarPlano, type Plano,
 } from '@/lib/financas'
 import { MODELOS_PLANO } from '@/lib/planos-modelos'
 import { BRASAO_HARVARD, fotoDoPlano } from '@/lib/imagens'
@@ -16,10 +16,12 @@ interface Props {
   userId: string
   familiaId: string
   planos: Plano[]
-  saldoMensal: number
+  sobra: { competencia: string; renda: number; contas: number; sobra: number } // do mês, antes dos aportes
 }
 
-export default function PlanosClient({ userId, familiaId, planos, saldoMensal }: Props) {
+export default function PlanosClient({ userId, familiaId, planos, sobra }: Props) {
+  const saldoMensal = sobra.sobra
+  const principal = planoPrincipal(planos)
   const router = useRouter()
   const supabase = createClient()
 
@@ -51,6 +53,7 @@ export default function PlanosClient({ userId, familiaId, planos, saldoMensal }:
         titulo: titulo.trim(),
         descricao: modelo.descricao || null,
         moeda: modelo.moeda,
+        status: 'ativo',
         itens: modelo.itens,
         etapas: modelo.etapas,
       })
@@ -61,14 +64,25 @@ export default function PlanosClient({ userId, familiaId, planos, saldoMensal }:
     router.push(`/financas/planos/${data.id}`)
   }
 
+  // O principal aparece no Início e mede os gastos supérfluos em "dias a mais"
+  async function tornarPrincipal(id: string) {
+    await supabase.from('fin_planos').update({ prioridade: 0 }).eq('familia_id', familiaId).neq('id', id)
+    await supabase.from('fin_planos').update({ prioridade: 1 }).eq('id', id)
+    router.refresh()
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm text-muted-foreground">Sobra mensal disponível para planos</p>
+          <p className="text-sm text-muted-foreground">Sobra de {nomeMes(sobra.competencia).split(' ')[0].toLowerCase()} para guardar</p>
           <p className={`text-2xl font-semibold tabular-nums ${saldoMensal >= 0 ? '' : 'text-red-600'}`}>
             {formatBRL(saldoMensal)}
           </p>
+          <p className="text-xs text-muted-foreground">renda {formatBRL(sobra.renda)} − contas {formatBRL(sobra.contas)}</p>
+          {aportesAtivos > 0 && excedente <= 0 && (
+            <p className="text-xs text-green-700">{formatBRL(aportesAtivos)} já vão para os planos · livres {formatBRL(saldoMensal - aportesAtivos)}</p>
+          )}
         </div>
         <button
           onClick={() => { setModalOpen(true); setErro(null); escolherModelo('em-branco') }}
@@ -94,7 +108,7 @@ export default function PlanosClient({ userId, familiaId, planos, saldoMensal }:
         <div className="rounded-lg border border-border p-12 text-center space-y-3">
           <Map className="w-8 h-8 text-muted-foreground mx-auto" />
           <p className="text-sm text-muted-foreground">
-            Nenhum plano ainda. Crie cenários para comparar caminhos: reserva, quitar dívidas, pós nos EUA, carreira jurídica lá fora...
+            Nenhum plano ainda. Um plano é um objetivo com preço: diga quanto custa e quanto guarda por mês, e o sistema mostra quando você chega lá.
           </p>
         </div>
       ) : (
@@ -131,14 +145,28 @@ export default function PlanosClient({ userId, familiaId, planos, saldoMensal }:
                       <p className="font-medium truncate">{p.titulo}</p>
                       {p.descricao && <p className="text-xs text-muted-foreground line-clamp-2">{p.descricao}</p>}
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${STATUS_PLANO[p.status].className}`}>
-                      {STATUS_PLANO[p.status].label}
-                    </span>
+                    {principal?.id === p.id ? (
+                      <span className="flex flex-shrink-0 items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        <Star className="h-3 w-3 fill-amber-400 text-amber-500" /> Principal
+                      </span>
+                    ) : p.status !== 'ativo' ? (
+                      <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${STATUS_PLANO[p.status].className}`}>
+                        {STATUS_PLANO[p.status].label}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={e => { e.preventDefault(); tornarPrincipal(p.id) }}
+                        className="flex-shrink-0 text-xs text-muted-foreground hover:text-primary"
+                      >
+                        tornar principal
+                      </button>
+                    )}
                   </div>
 
                   <div className="space-y-1">
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>{formatMoeda(Number(p.valor_guardado), p.moeda)} de {pr.meta > 0 ? formatMoeda(pr.meta, p.moeda) : 'meta a definir'}</span>
+                      <span>{formatBRL(pr.guardadoBRL)} de {pr.meta > 0 ? (p.moeda === 'USD' ? `${formatMoeda(pr.meta, 'USD')} (${formatBRL(pr.metaBRL)})` : formatBRL(pr.metaBRL)) : 'meta a definir'}</span>
                       <span>{pr.progresso.toFixed(0)}%</span>
                     </div>
                     <div className="h-2 rounded-full bg-secondary overflow-hidden">
@@ -152,9 +180,11 @@ export default function PlanosClient({ userId, familiaId, planos, saldoMensal }:
                         ? 'Informe a cotação do dólar'
                         : pr.metaBRL === 0
                           ? 'Preencha os custos'
-                          : pr.dataPrevista
-                            ? `Previsão: ${formatMesAno(pr.dataPrevista)}`
-                            : 'Sem aporte mensal definido'}
+                          : pr.mesesNoRitmo === 0
+                            ? 'Meta atingida'
+                            : pr.dataPrevista
+                              ? `Chega lá em ${formatMesAno(pr.dataPrevista)} · ${formatBRL(Number(p.aporte_mensal))}/mês`
+                              : 'Defina quanto guardar por mês'}
                     </span>
                     <ChevronRight className="w-4 h-4 group-hover:text-primary" />
                   </div>

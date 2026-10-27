@@ -2,7 +2,7 @@ import { createClient, getUser } from '@/lib/supabase/server'
 import { obterFamilia } from '@/lib/familia'
 import {
   competenciaISO, planoPrincipal, rendaMensal, somarMeses,
-  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Receita, type Renda,
+  type Aporte, type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Receita, type Renda,
 } from '@/lib/financas'
 import MesClient from './mes-client'
 
@@ -17,7 +17,7 @@ export default async function MesPage({ searchParams }: { searchParams: { mes?: 
 
   const [
     { data: familia }, { data: lancamentos }, { data: cartoes }, { data: despesas }, { data: rendas }, { data: planos },
-    { data: faturasPagas }, { data: faturaAnterior }, { data: atrasados }, { data: dizimoConfig }, { data: dizimos }, { data: receitas },
+    { data: faturasPagas }, { data: faturaAnterior }, { data: atrasados }, { data: dizimoConfig }, { data: dizimos }, { data: receitas }, { data: aportes },
   ] =
     await Promise.all([
       supabase.from('fin_familias').select('tetos').eq('id', familiaId).single(),
@@ -40,6 +40,7 @@ export default async function MesPage({ searchParams }: { searchParams: { mes?: 
       supabase.from('fin_dizimos').select('competencia, valor, devolvido_em').eq('familia_id', familiaId).lte('competencia', competencia),
       // Entradas: só as que pagam este mês, mais as de meses anteriores ao dízimo em aberto (para o cálculo dele)
       supabase.from('fin_receitas').select('*').eq('familia_id', familiaId).lte('competencia', competencia).gte('competencia', somarMeses(competencia, -12)),
+      supabase.from('fin_aportes').select('*').eq('familia_id', familiaId).eq('competencia', competencia),
     ])
 
   return (
@@ -54,6 +55,8 @@ export default async function MesPage({ searchParams }: { searchParams: { mes?: 
       cartoes={(cartoes ?? []) as Cartao[]}
       despesas={(despesas ?? []) as Despesa[]}
       plano={planoPrincipal((planos ?? []) as Plano[])}
+      planos={(planos ?? []) as Plano[]}
+      aportes={(aportes ?? []) as Aporte[]}
       renda={((rendas ?? []) as Renda[]).reduce((a, r) => a + rendaMensal(r), 0)}
       faturasPagas={(faturasPagas ?? []) as FaturaPaga[]}
       faturaAnterior={(faturaAnterior ?? []) as Lancamento[]}

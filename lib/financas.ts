@@ -226,7 +226,30 @@ export interface Plano {
   prioridade: number
   itens: ItemPlano[]
   etapas: EtapaPlano[]
+  dia_aporte?: number // o aporte vence neste dia (27: logo depois do salário, no mês anterior)
+  guardado_por?: 'aportes' | 'dolar' // como acompanha o que já tem
+  aportado?: number // calculado: aportes pagos (ou dólar guardado) em reais
   created_at: string
+}
+
+/** Um aporte de um plano num mês (uma linha = registrado; pago ou ainda não). */
+export interface Aporte {
+  id: string
+  plano_id: string
+  competencia: string
+  valor: number
+  pago: boolean
+  data: string
+}
+
+/** Junta ao plano o que já foi guardado: os aportes pagos ou, se escolhido, o dólar guardado em Patrimônio. */
+export function comAportado<P extends Plano>(planos: P[], aportes: Pick<Aporte, 'plano_id' | 'valor' | 'pago'>[], dolarGuardado = 0): P[] {
+  return planos.map(p => ({
+    ...p,
+    aportado: p.guardado_por === 'dolar' && p.moeda === 'USD'
+      ? dolarGuardado * (Number(p.cotacao) || 0)
+      : aportes.filter(a => a.plano_id === p.id && a.pago).reduce((s, a) => s + Number(a.valor), 0),
+  }))
 }
 
 export const STATUS_PLANO: Record<StatusPlano, { label: string; className: string }> = {
@@ -268,7 +291,9 @@ export function projetarPlano(p: Plano, aporte = Number(p.aporte_mensal), hoje =
   const meta = p.itens.reduce((a, i) => a + (Number(i.valor) || 0), 0)
   const fator = fatorBRL(p)
   const metaBRL = meta * fator
-  const guardadoBRL = Number(p.valor_guardado) * fator
+  // Pelo dólar de Patrimônio, o que conta é só ele; pelos aportes, a base informada mais os aportes pagos
+  const base = p.guardado_por === 'dolar' && p.moeda === 'USD' ? 0 : Number(p.valor_guardado) * fator
+  const guardadoBRL = base + (p.aportado ?? 0)
   const faltaBRL = Math.max(metaBRL - guardadoBRL, 0)
   const progresso = metaBRL > 0 ? Math.min((guardadoBRL / metaBRL) * 100, 100) : 0
 
@@ -496,6 +521,11 @@ export function competenciaDaReceita(dataISO: string): string {
 }
 
 /** Rendas previstas para pagar um mês, com a data em que devem cair. Eventuais ficam de fora. */
+/** Data de um "dia X" que pertence a um mês: da virada em diante, cai no mês anterior (como o salário do dia 26). */
+export function dataNaCompetencia(competencia: string, dia: number): string {
+  return diaNoMes(dia >= DIA_VIRADA ? somarMeses(competencia, -1) : competencia, dia)
+}
+
 export function rendasPrevistas(rendas: Renda[], competencia: string): { renda: Renda; data: string | null }[] {
   return rendas.flatMap(r => {
     if (!r.ativo) return []

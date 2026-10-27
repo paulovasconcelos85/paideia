@@ -1,6 +1,6 @@
 import {
-  diaNoMes, dizimoDoMes, faturaPagaNoMes, ocorreNoMes, rendaDoMes, rotuloParcela, somarMeses, vencimentoFatura,
-  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Receita, type Renda,
+  dataNaCompetencia, diaNoMes, dizimoDoMes, faturaPagaNoMes, ocorreNoMes, rendaDoMes, rotuloParcela, somarMeses, vencimentoFatura,
+  type Aporte, type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Receita, type Renda,
 } from './financas'
 
 /**
@@ -11,7 +11,7 @@ import {
  */
 export interface Conta {
   chave: string
-  tipo: 'conta' | 'fatura' | 'dizimo'
+  tipo: 'conta' | 'fatura' | 'dizimo' | 'aporte'
   descricao: string
   valor: number
   vencimento: string | null // YYYY-MM-DD
@@ -28,6 +28,8 @@ export interface Conta {
   competenciaDizimo?: string
   renda?: number
   dizimo?: DizimoDevolvido
+  plano?: Plano
+  aporte?: Aporte
 }
 
 interface Entrada {
@@ -43,6 +45,8 @@ interface Entrada {
   dizimos: DizimoDevolvido[]
   dizimoDesde: string | null
   verAtrasos: boolean // mês atual: traz o que ficou em aberto antes
+  planos?: Plano[] // os aportes dos planos ativos entram como contas
+  aportes?: Aporte[]
 }
 
 export const vencimentoDe = (l: Pick<Lancamento, 'vencimento' | 'data'>) => l.vencimento ?? l.data
@@ -75,6 +79,7 @@ export function montarContas(e: Entrada): Conta[] {
     ...lancamentos.filter(l => !l.cartao_id).map(l => registrada(l)),
     ...doCadastro,
     ...montarFaturas(e),
+    ...montarAportes(e),
   ].sort((a, b) => (a.vencimento ?? '9999').localeCompare(b.vencimento ?? '9999') || b.valor - a.valor)
 
   return [...montarDizimos(e), ...contas]
@@ -97,6 +102,21 @@ function montarFaturas({ mes, lancamentos, cartoes, despesas, faturasPagas, fatu
       chave: `f-${c.id}`, tipo: 'fatura', descricao: `Fatura ${c.nome}`, valor: total,
       vencimento: vencimentoFatura(c, competencia), pago: pagas.has(`${c.id}|${competencia}`),
       cartao: c, competenciaFatura: competencia, linhas, previstoNaFatura: previsto,
+    }]
+  })
+}
+
+/** "Guardar para ...": o aporte mensal de cada plano ativo, a partir do mês em que o plano foi criado. */
+function montarAportes({ mes, planos = [], aportes = [] }: Entrada): Conta[] {
+  return planos.flatMap((p): Conta[] => {
+    const registro = aportes.find(a => a.plano_id === p.id && a.competencia.slice(0, 10) === mes)
+    const previsto = p.status === 'ativo' && Number(p.aporte_mensal) > 0 && p.created_at.slice(0, 7) <= mes.slice(0, 7)
+    if (!registro && !previsto) return []
+    return [{
+      chave: `a-${p.id}`, tipo: 'aporte', descricao: `Guardar: ${p.titulo}`,
+      valor: registro ? Number(registro.valor) : Number(p.aporte_mensal),
+      vencimento: dataNaCompetencia(mes, p.dia_aporte ?? 27), pago: registro?.pago ?? false,
+      plano: p, aporte: registro,
     }]
   })
 }

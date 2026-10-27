@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle2, ChevronDown, Circle, CreditCard, Loader2, PauseCircle, Plus } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Circle, CreditCard, Loader2, PauseCircle, PiggyBank, Plus } from 'lucide-react'
 import { formatBRL, nomeMes, parseBRL, type Despesa, type Lancamento } from '@/lib/financas'
 import type { Conta } from '@/lib/contas'
 
@@ -66,6 +66,7 @@ export default function ContasLista({
           >
             <p className={`flex items-center gap-1.5 text-sm ${c.pago ? 'text-muted-foreground' : 'font-medium'}`}>
               {fatura && <CreditCard className="h-3.5 w-3.5 flex-shrink-0 text-primary" />}
+              {c.tipo === 'aporte' && <PiggyBank className="h-3.5 w-3.5 flex-shrink-0 text-primary" />}
               <span className="truncate">
                 {c.descricao}
                 {dizimo && c.atrasada && c.competenciaDizimo ? ` de ${nomeMes(c.competenciaDizimo).split(' ')[0].toLowerCase()}` : ''}
@@ -97,8 +98,8 @@ export default function ContasLista({
           ) : (
             <button
               type="button"
-              onClick={() => (c.tipo === 'conta' ? setEditando({ chave: c.chave, texto: c.valor.toFixed(2).replace('.', ',') }) : fatura ? onExpandir(c.chave) : onAbrir(c))}
-              title={c.tipo === 'conta' ? 'Tocar para mudar o valor' : undefined}
+              onClick={() => (c.tipo === 'conta' || c.tipo === 'aporte' ? setEditando({ chave: c.chave, texto: c.valor.toFixed(2).replace('.', ',') }) : fatura ? onExpandir(c.chave) : onAbrir(c))}
+              title={c.tipo === 'conta' || c.tipo === 'aporte' ? 'Tocar para mudar o valor' : undefined}
               className={`py-3 pl-2 pr-4 text-right text-sm tabular-nums ${corValor} ${vencida ? 'font-bold' : 'font-semibold'}`}
             >
               {formatBRL(c.valor)}

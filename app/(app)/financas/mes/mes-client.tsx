@@ -9,7 +9,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import {
   CATEGORIAS_DESPESA, espelharLancamento, formatBRL, hojeISO, lancamentoEssencial, nomeMes, rendaDoMes,
-  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Receita, type Renda,
+  type Aporte, type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Receita, type Renda,
 } from '@/lib/financas'
 import { montarContas, type Conta } from '@/lib/contas'
 import { abrirWhatsApp, compartilharArquivo, gerarExcel, gerarPdf, type MesParaExportar } from '@/lib/exportar-mes'
@@ -32,6 +32,8 @@ interface Props {
   cartoes: Cartao[]
   despesas: Despesa[]
   plano: Plano | null
+  planos: Plano[]
+  aportes: Aporte[] // aportes dos planos registrados neste mês
   renda: number
   cartaoInicial: string | null // vindo do Orçamento: abre a fatura daquele cartão
   faturasPagas: FaturaPaga[]
@@ -53,7 +55,7 @@ function mesVizinho(competencia: string, delta: number) {
 export default function MesClient({
   familiaId, userId, competencia, tetos: tetosIniciais, lancamentos: iniciais, cartoes, despesas, plano, renda, cartaoInicial,
   faturasPagas: faturasIniciais, faturaAnterior: anteriorInicial, atrasados: atrasadosIniciais,
-  rendas, receitas: receitasIniciais, dizimoDesde, dizimos: dizimosIniciais, verAtrasos,
+  rendas, receitas: receitasIniciais, dizimoDesde, dizimos: dizimosIniciais, verAtrasos, planos, aportes: aportesIniciais,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -71,6 +73,8 @@ export default function MesClient({
   useEffect(() => { setDizimos(dizimosIniciais) }, [dizimosIniciais])
   const [tetos, setTetos] = useState(tetosIniciais)
   const [receitas, setReceitas] = useState(receitasIniciais)
+  const [aportes, setAportes] = useState(aportesIniciais)
+  useEffect(() => { setAportes(aportesIniciais) }, [aportesIniciais])
   useEffect(() => { setReceitas(receitasIniciais) }, [receitasIniciais])
   const [receitaAberta, setReceitaAberta] = useState<{ entrada: Entrada | null } | null>(null)
 
@@ -90,7 +94,7 @@ export default function MesClient({
   const hoje = hojeISO()
   const contas = montarContas({
     mes: competencia, lancamentos, atrasados, cartoes, despesas, faturasPagas, faturaAnterior,
-    rendas, receitas, dizimos, dizimoDesde, verAtrasos,
+    rendas, receitas, dizimos, dizimoDesde, verAtrasos, planos, aportes,
   })
   const entradas = montarEntradas(rendas, receitas, competencia)
   const rendaRecebida = receitas.some(r => r.competencia.slice(0, 10) === competencia && r.tipo !== 'saldo')
@@ -149,6 +153,8 @@ export default function MesClient({
         ? await supabase.from('fin_faturas').delete().eq('cartao_id', cartaoId).eq('competencia', comp)
         : await supabase.from('fin_faturas').insert({ familia_id: familiaId, cartao_id: cartaoId, competencia: comp })
       if (error) { setFaturasPagas(antes); alert('Não foi possível atualizar. Tente de novo.') }
+    } else if (c.tipo === 'aporte' && c.plano) {
+      await gravarAporte(c, { pago: !c.pago })
     } else if (c.tipo === 'dizimo' && c.competenciaDizimo) {
       const comp = c.competenciaDizimo
       const registro = { competencia: comp, valor: c.valor, devolvido_em: hoje }
@@ -161,7 +167,22 @@ export default function MesClient({
     }
   }
 
+  /** Aporte do plano no mês: cria ou atualiza o registro (o "já guardado" do plano soma os pagos). */
+  async function gravarAporte(c: Conta, campos: { pago?: boolean; valor?: number }) {
+    const plano = c.plano!
+    const antes = aportes
+    const registro = {
+      familia_id: familiaId, plano_id: plano.id, competencia, data: hoje,
+      valor: campos.valor ?? c.valor, pago: campos.pago ?? c.pago,
+    }
+    setAportes(prev => [...prev.filter(a => a.plano_id !== plano.id), { id: c.aporte?.id ?? 'novo', ...registro }])
+    const { data, error } = await supabase.from('fin_aportes').upsert(registro, { onConflict: 'plano_id,competencia' }).select().single()
+    if (error || !data) { setAportes(antes); return alert('Não foi possível salvar o aporte. Tente de novo.') }
+    setAportes(prev => [...prev.filter(a => a.plano_id !== plano.id), data as Aporte])
+  }
+
   async function mudarValor(c: Conta, valor: number) {
+    if (c.tipo === 'aporte') return gravarAporte(c, { valor })
     if (!c.lancamento) return ocupar(c.chave, () => registrar(c, { valor, pago: false }))
     const l = c.lancamento
     trocarLancamento({ ...l, valor })
@@ -233,6 +254,7 @@ export default function MesClient({
 
   function abrir(c: Conta) {
     if (c.tipo === 'dizimo') setDizimoAberto(c)
+    else if (c.tipo === 'aporte' && c.plano) router.push(`/financas/planos/${c.plano.id}`)
     else if (c.tipo === 'conta') setContaAberta(c)
   }
 

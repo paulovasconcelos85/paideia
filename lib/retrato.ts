@@ -3,7 +3,7 @@ import { buscarPtax } from './cambio'
 import { simularQuitacao } from './dividas'
 import { historicoPatrimonio } from './familia'
 import {
-  CATEGORIAS_DESPESA, competenciaISO, despesaMensal, espelharLancamento, lancamentoEssencial, planoPrincipal, projetarPlano, rendaMensal,
+  CATEGORIAS_DESPESA, comAportado, competenciaISO, despesaMensal, espelharLancamento, lancamentoEssencial, planoPrincipal, projetarPlano, rendaMensal,
   type Cartao, type Despesa, type Lancamento, type Plano, type Renda,
 } from './financas'
 import { diagnosticar, type Alerta } from './financas-diagnostico'
@@ -63,7 +63,7 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
 
   const [
     ptax, { data: familia }, { data: despesas }, { data: rendas }, { data: planos }, { data: lancamentos },
-    { data: lancAnterior }, patrimonio, { data: cartoes }, { data: membros }, { data: carta },
+    { data: lancAnterior }, patrimonio, { data: cartoes }, { data: membros }, { data: carta }, { data: aportes },
   ] = await Promise.all([
     ptaxPromise,
     supabase.from('fin_familias').select('nome, tetos').eq('id', familiaId).single(),
@@ -77,13 +77,15 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
     supabase.from('fin_cartoes').select('*').eq('familia_id', familiaId).order('created_at'),
     supabase.rpc('fin_membros_familia'),
     supabase.from('fin_cartas').select('texto').eq('familia_id', familiaId).eq('mes', competencia).maybeSingle(),
+    supabase.from('fin_aportes').select('plano_id, valor, pago').eq('familia_id', familiaId),
   ])
 
   const listaDespesas = (despesas ?? []) as Despesa[]
   const listaRendas = (rendas ?? []) as Renda[]
-  const listaPlanos = ((planos ?? []) as Plano[]).map(p =>
+  // O que já foi guardado conta os aportes pagos (ou o dólar de Patrimônio, se o plano escolheu assim)
+  const listaPlanos = comAportado(((planos ?? []) as Plano[]).map(p =>
     p.moeda === 'USD' && !p.cotacao && ptax ? { ...p, cotacao: ptax.venda } : p
-  )
+  ), aportes ?? [], patrimonio.usd)
   type LancResumo = Pick<Lancamento, 'valor' | 'categoria' | 'essencial' | 'descricao' | 'despesa_id' | 'competencia' | 'parcela_atual' | 'parcelas_total'>
   const lancs = ((lancamentos ?? []) as LancResumo[]).map(l => espelharLancamento(l, listaDespesas))
 

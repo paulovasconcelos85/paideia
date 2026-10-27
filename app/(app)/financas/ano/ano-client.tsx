@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   espelharLancamento, formatBRL, hojeISO, rendaDoMes, somarMeses,
-  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Receita, type Renda,
+  type Aporte, type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Receita, type Renda,
 } from '@/lib/financas'
 import { montarContas, type Conta } from '@/lib/contas'
 
@@ -20,6 +20,8 @@ interface Props {
   cartoes: Cartao[]
   rendas: Renda[]
   receitas: Receita[]
+  planos: Plano[]
+  aportes: Aporte[]
   faturasPagas: FaturaPaga[]
   dizimoDesde: string | null
   dizimos: DizimoDevolvido[]
@@ -38,11 +40,12 @@ interface Celula {
 function colunaDe(c: Conta): string {
   if (c.tipo === 'dizimo') return 'dizimo'
   if (c.tipo === 'fatura') return `f-${c.cartao!.id}`
+  if (c.tipo === 'aporte') return `a-${c.plano!.id}`
   return c.despesa ? `d-${c.despesa.id}` : 'outras'
 }
 
 /** O ano numa grade, como a planilha: um mês por linha, uma conta por coluna, vermelho a pagar e verde pago. */
-export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos, despesas, cartoes, rendas, receitas, faturasPagas, dizimoDesde, dizimos }: Props) {
+export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos, despesas, cartoes, rendas, receitas, planos, aportes, faturasPagas, dizimoDesde, dizimos }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -51,7 +54,7 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
 
   // Marcações feitas aqui valem na hora; somem quando os dados novos chegam do servidor
   const [marcadas, setMarcadas] = useState<Record<string, boolean>>({})
-  useEffect(() => { setMarcadas({}) }, [brutos, faturasPagas, dizimos])
+  useEffect(() => { setMarcadas({}) }, [brutos, faturasPagas, dizimos, aportes])
 
   const { meses, colunas, rotulos } = useMemo(() => {
     const lancamentos = brutos.map(l => espelharLancamento(l, despesas))
@@ -68,6 +71,8 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
         faturaAnterior: lancamentos.filter(l => l.competencia === anterior && l.cartao_id),
         rendas,
         receitas,
+        planos,
+        aportes,
         dizimos,
         dizimoDesde,
         verAtrasos: false,
@@ -92,6 +97,7 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
       .sort((a, b) => (a.dia_vencimento ?? 99) - (b.dia_vencimento ?? 99) || a.descricao.localeCompare(b.descricao))
     const colunas = [
       ...(usadas.has('dizimo') ? ['dizimo'] : []),
+      ...planos.filter(p => usadas.has(`a-${p.id}`)).map(p => `a-${p.id}`),
       ...fixas.map(d => `d-${d.id}`),
       ...cartoes.filter(c => usadas.has(`f-${c.id}`)).map(c => `f-${c.id}`),
       ...(usadas.has('outras') ? ['outras'] : []),
@@ -99,8 +105,9 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
     const rotulos: Record<string, string> = { dizimo: 'Dízimo', outras: 'Outras contas' }
     for (const d of fixas) rotulos[`d-${d.id}`] = d.descricao
     for (const c of cartoes) rotulos[`f-${c.id}`] = c.nome
+    for (const p of planos) rotulos[`a-${p.id}`] = `Guardar: ${p.titulo}`
     return { meses, colunas, rotulos }
-  }, [ano, brutos, despesas, cartoes, rendas, receitas, faturasPagas, dizimos, dizimoDesde, hoje])
+  }, [ano, brutos, despesas, cartoes, rendas, receitas, planos, aportes, faturasPagas, dizimos, dizimoDesde, hoje])
 
   const pagoDe = (mes: string, col: string, cel: Celula) => marcadas[`${mes}|${col}`] ?? cel.pago
 
@@ -124,6 +131,11 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
       ({ error: erro } = novo
         ? await supabase.from('fin_faturas').insert({ familia_id: familiaId, cartao_id: c.cartao.id, competencia: c.competenciaFatura })
         : await supabase.from('fin_faturas').delete().eq('cartao_id', c.cartao.id).eq('competencia', c.competenciaFatura))
+    } else if (c.tipo === 'aporte' && c.plano) {
+      ({ error: erro } = await supabase.from('fin_aportes').upsert(
+        { familia_id: familiaId, plano_id: c.plano.id, competencia: mes, valor: c.valor, pago: novo, data: hoje },
+        { onConflict: 'plano_id,competencia' },
+      ))
     } else if (c.tipo === 'dizimo' && c.competenciaDizimo) {
       ({ error: erro } = novo
         ? await supabase.from('fin_dizimos').upsert({ familia_id: familiaId, competencia: c.competenciaDizimo, valor: c.valor, devolvido_em: hoje })
