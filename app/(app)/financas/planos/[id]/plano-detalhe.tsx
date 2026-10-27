@@ -22,8 +22,10 @@ interface Props {
   mesesComAporte: number
 }
 
-const texto = (v: number | null | undefined) => (v ? Number(v).toFixed(2).replace('.', ',') : '')
-const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+const texto = (v: number | null | undefined) =>
+  v ? Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
+const campo = 'rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+const inputClass = `w-full ${campo}`
 
 /** Um plano em três perguntas: quanto custa, quanto já tenho, quanto guardo por mês. Salva sozinho. */
 export default function PlanoDetalhe({ plano, sobra, aportesOutros, ptax, dolarGuardado, aportesPagos, mesesComAporte }: Props) {
@@ -217,8 +219,8 @@ export default function PlanoDetalhe({ plano, sobra, aportesOutros, ptax, dolarG
           <div className="space-y-2">
             {itens.map((it, i) => (
               <div key={i} className="flex items-center gap-2">
-                <input value={it.descricao} onChange={e => setItens(p => p.map((x, j) => (j === i ? { ...x, descricao: e.target.value } : x)))} placeholder="Ex.: anuidade" className={`${inputClass} flex-1`} />
-                <input inputMode="decimal" value={it.valor} onChange={e => setItens(p => p.map((x, j) => (j === i ? { ...x, valor: e.target.value } : x)))} placeholder="0,00" className={`${inputClass} w-28 text-right`} />
+                <input value={it.descricao} onChange={e => setItens(p => p.map((x, j) => (j === i ? { ...x, descricao: e.target.value } : x)))} placeholder="Ex.: anuidade" className={`${campo} min-w-0 flex-1`} />
+                <input inputMode="decimal" value={it.valor} onChange={e => setItens(p => p.map((x, j) => (j === i ? { ...x, valor: e.target.value } : x)))} placeholder="0,00" className={`${campo} w-32 flex-shrink-0 text-right tabular-nums`} />
                 <button type="button" onClick={() => setItens(p => p.filter((_, j) => j !== i))} className="p-1 text-muted-foreground hover:text-red-600" aria-label="Remover">
                   <X className="h-4 w-4" />
                 </button>

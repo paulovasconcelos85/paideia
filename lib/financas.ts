@@ -259,7 +259,7 @@ export const STATUS_PLANO: Record<StatusPlano, { label: string; className: strin
   concluido: { label: 'Concluído', className: 'bg-green-100 text-green-800' },
 }
 
-const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' })
 
 export function formatMoeda(valor: number, moeda: Moeda): string {
   return moeda === 'USD' ? usd.format(valor) : brl.format(valor)
