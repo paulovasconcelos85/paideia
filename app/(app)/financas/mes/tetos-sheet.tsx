@@ -51,7 +51,7 @@ export default function TetosSheet({ familiaId, tetos, despesas, onSaved, onClos
     <Sheet titulo="Limites do mês" onClose={onClose}>
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Quanto a família combina gastar, no máximo, em cada categoria. Deixe em branco o que não quiser limitar.
+          Quanto me proponho a gastar, no máximo, em cada categoria. Deixe em branco o que não quiser limitar.
         </p>
         <button type="button" onClick={sugerir} className="text-sm text-primary hover:underline">
           Preencher com o que o orçamento prevê

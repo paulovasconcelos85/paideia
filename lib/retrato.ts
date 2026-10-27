@@ -135,7 +135,7 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
   const pr = principal ? projetarPlano(principal) : null
 
   return {
-    familiaNome: (familia?.nome as string | undefined) ?? 'Nossa família',
+    familiaNome: (familia?.nome as string | undefined) ?? 'Minhas finanças',
     competencia,
     hoje: agora.toISOString(),
     diasRestantes,

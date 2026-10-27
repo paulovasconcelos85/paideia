@@ -138,7 +138,7 @@ export async function GET(request: Request) {
         if (extras.length > 0) {
           avisos.push({
             titulo: `${extras.map(r => r.descricao).join(' e ')} chega este mês`,
-            corpo: `${formatBRL(extras.reduce((a, r) => a + Number(r.valor), 0))}. Decidam o destino antes de o dinheiro cair.`,
+            corpo: `${formatBRL(extras.reduce((a, r) => a + Number(r.valor), 0))}. Decida o destino antes de o dinheiro cair.`,
             url: '/financas/planos',
             tag: 'renda-extra',
           })

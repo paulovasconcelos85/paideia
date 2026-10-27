@@ -61,7 +61,7 @@ export default function FixosSheet({ familiaId, userId, competencia, pendentes, 
       }))
       .select()
     setSaving(false)
-    if (error || !data) return setErro('Não foi possível lançar os fixos.')
+    if (error || !data) return setErro(`Não foi possível lançar os fixos.${error ? ` (${error.code}: ${error.message})` : ''}`)
     onSaved(data as Lancamento[])
   }
 

@@ -445,3 +445,26 @@ export function faturaPagaNoMes(c: Pick<Cartao, 'dia_vencimento' | 'dia_fechamen
 export function formatDiaMes(dataISO: string): string {
   return new Date(`${dataISO}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
 }
+
+// ── Dízimo: 10% da renda, devolvido ao Senhor. Não é gasto.
+
+export const DIZIMO = 0.1
+
+/** Dízimo de um mês já devolvido. */
+export interface DizimoDevolvido {
+  competencia: string
+  valor: number
+  devolvido_em: string
+}
+
+/** Renda que entra num mês: as mensais e as anuais (13º, férias) no mês em que caem. Eventuais ficam de fora. */
+export function rendaDoMes(rendas: Pick<Renda, 'valor' | 'frequencia' | 'ativo' | 'mes_recebimento'>[], competencia: string): number {
+  const mes = Number(competencia.slice(5, 7))
+  return rendas
+    .filter(r => r.ativo && (r.frequencia === 'mensal' || (r.frequencia === 'anual' && r.mes_recebimento === mes)))
+    .reduce((a, r) => a + Number(r.valor), 0)
+}
+
+export function dizimoDoMes(rendas: Pick<Renda, 'valor' | 'frequencia' | 'ativo' | 'mes_recebimento'>[], competencia: string): number {
+  return Math.round(rendaDoMes(rendas, competencia) * DIZIMO * 100) / 100
+}

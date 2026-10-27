@@ -330,7 +330,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
     <div className="space-y-6 pb-20 lg:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-sm text-muted-foreground">Custo mensal da família</p>
+          <p className="text-sm text-muted-foreground">Meu custo mensal</p>
           <p className="text-2xl font-semibold tabular-nums">{formatBRL(totalPlanejado)}</p>
         </div>
         <div className="flex gap-2">
@@ -769,7 +769,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{form.essencial ? 'Essencial' : 'Não essencial'}</p>
                   <p className="text-xs text-muted-foreground">
-                    {form.essencial ? 'A família não vive sem' : 'Dá para cortar ou reduzir se precisar'}
+                    {form.essencial ? 'Não dá para viver sem' : 'Dá para cortar ou reduzir se precisar'}
                   </p>
                 </div>
               </div>

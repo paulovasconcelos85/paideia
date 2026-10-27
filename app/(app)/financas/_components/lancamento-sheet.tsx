@@ -309,7 +309,7 @@ export default function LancamentoSheet({
           {cartaoEscolhido ? (
             <p className="text-xs text-muted-foreground">
               Entra na fatura de <strong>{nomeMes(faturaPrevista!).toLowerCase()}</strong>
-              {venceFatura ? <>, que vence em <strong>{formatDiaMes(venceFatura)}</strong></> : ''}. Marque a fatura como paga em Mês → Saídas.
+              {venceFatura ? <>, que vence em <strong>{formatDiaMes(venceFatura)}</strong></> : ''}. Marco a fatura como paga em Mês → Contas.
             </p>
           ) : (
             <div className="flex gap-2">

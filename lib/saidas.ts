@@ -1,12 +1,12 @@
 import {
-  diaNoMes, faturaPagaNoMes, vencimentoFatura,
-  type Cartao, type Despesa, type FaturaPaga, type Lancamento,
+  diaNoMes, dizimoDoMes, faturaPagaNoMes, rendaDoMes, somarMeses, vencimentoFatura,
+  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Renda,
 } from './financas'
 
 /** Uma saída de dinheiro no mês: conta fora do cartão, fatura de cartão ou fixo do orçamento ainda não lançado. */
 export interface Saida {
   chave: string
-  tipo: 'conta' | 'fatura' | 'previsto'
+  tipo: 'conta' | 'fatura' | 'previsto' | 'dizimo'
   descricao: string
   valor: number
   data: string | null // quando sai (YYYY-MM-DD); null = sem dia definido
@@ -18,6 +18,9 @@ export interface Saida {
   cartao?: Cartao
   competenciaFatura?: string
   previstoNaFatura?: number // fixos e parcelas do cartão que ainda não chegaram à fatura
+  competenciaDizimo?: string
+  renda?: number // base do dízimo
+  dizimo?: DizimoDevolvido // quando já devolvido
 }
 
 interface Entrada {
@@ -28,12 +31,18 @@ interface Entrada {
   faturasPagas: FaturaPaga[]
   faturaAnterior: Pick<Lancamento, 'cartao_id' | 'valor'>[] // linhas de cartão do mês anterior
   fixosPendentes: Despesa[] // do orçamento, ainda não lançados no mês
+  rendas: Renda[]
+  dizimos: DizimoDevolvido[] // devolvidos desde dizimoDesde
+  dizimoDesde: string | null // primeiro mês em que o dízimo é acompanhado
+  verAtrasos: boolean // mês atual: traz o que ficou em aberto de meses anteriores
 }
 
 export const dataPagamento = (l: Pick<Lancamento, 'vencimento' | 'data'>) => l.vencimento ?? l.data
 
 /** Tudo o que sai da conta no mês, pela data em que sai. */
-export function montarSaidas({ mes, lancamentos, atrasados, cartoes, faturasPagas, faturaAnterior, fixosPendentes }: Entrada): Saida[] {
+export function montarSaidas({
+  mes, lancamentos, atrasados, cartoes, faturasPagas, faturaAnterior, fixosPendentes, rendas, dizimos, dizimoDesde, verAtrasos,
+}: Entrada): Saida[] {
   const pagas = new Set(faturasPagas.map(f => `${f.cartao_id}|${f.competencia.slice(0, 10)}`))
   const conta = (l: Lancamento, atrasada = false): Saida => ({
     chave: `l-${l.id}`, tipo: 'conta', descricao: l.descricao, valor: Number(l.valor), data: dataPagamento(l),
@@ -64,5 +73,30 @@ export function montarSaidas({ mes, lancamentos, atrasados, cartoes, faturasPaga
     })
   }
 
-  return saidas.sort((a, b) => (a.data ?? '9999').localeCompare(b.data ?? '9999') || b.valor - a.valor)
+  saidas.sort((a, b) => (a.data ?? '9999').localeCompare(b.data ?? '9999') || b.valor - a.valor)
+  // O dízimo vem primeiro: as primícias
+  return [...montarDizimos(mes, rendas, dizimos, dizimoDesde, verAtrasos), ...saidas]
 }
+
+/** Dízimo do mês e, no mês atual, os meses anteriores ainda não devolvidos. */
+export function montarDizimos(
+  mes: string, rendas: Renda[], dizimos: DizimoDevolvido[], dizimoDesde: string | null, verAtrasos: boolean,
+): Saida[] {
+  if (!dizimoDesde || mes < dizimoDesde.slice(0, 10)) return []
+  const devolvidos = new Map(dizimos.map(d => [d.competencia.slice(0, 10), d]))
+  const meses: string[] = []
+  for (let c = verAtrasos ? dizimoDesde.slice(0, 10) : mes; c <= mes; c = somarMeses(c, 1)) meses.push(c)
+
+  return meses.flatMap((c): Saida[] => {
+    const dizimo = devolvidos.get(c)
+    const devido = dizimoDoMes(rendas, c)
+    if (c < mes && dizimo) return [] // mês anterior já devolvido
+    if (!dizimo && devido <= 0) return []
+    return [{
+      chave: `z-${c}`, tipo: 'dizimo', descricao: 'Dízimo', valor: dizimo ? Number(dizimo.valor) : devido,
+      data: dizimo?.devolvido_em ?? null, pago: !!dizimo, atrasada: c < mes,
+      competenciaDizimo: c, renda: rendaDoMes(rendas, c), dizimo,
+    }]
+  })
+}
+

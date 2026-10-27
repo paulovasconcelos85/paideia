@@ -48,7 +48,7 @@ export default function InicioClient({ familiaId, userId, retrato }: Props) {
   return (
     <div className="space-y-4 pb-24 lg:pb-8">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">O retrato das nossas finanças</p>
+        <p className="text-sm text-muted-foreground">O retrato das minhas finanças</p>
         <Link
           href="/financas/apresentacao"
           className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background shadow-sm transition-transform active:scale-95"

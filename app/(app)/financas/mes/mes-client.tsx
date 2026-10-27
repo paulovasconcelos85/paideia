@@ -7,11 +7,14 @@ import { ChevronDown, ChevronLeft, ChevronRight, CreditCard, FileUp, ListChecks,
 import { createClient } from '@/lib/supabase/client'
 import {
   CATEGORIAS_DESPESA, despesaMensal, espelharLancamento, formatBRL, formatDiaMes, hojeISO, lancamentoEssencial, nomeMes, parcelasRestantes,
-  type Cartao, type Despesa, type FaturaPaga, type Lancamento, type Plano,
+  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Renda,
 } from '@/lib/financas'
 import { dataPagamento, montarSaidas, type Saida } from '@/lib/saidas'
 import LancamentoSheet from '../_components/lancamento-sheet'
 import SaidasLista from './saidas-lista'
+import ContaFixaSheet, { atalhosPendentes, type Atalho } from './conta-fixa-sheet'
+import PagarContaSheet from './pagar-conta-sheet'
+import DizimoSheet from './dizimo-sheet'
 import ImportarFatura from './importar-fatura'
 import TetosSheet from './tetos-sheet'
 import FixosSheet from './fixos-sheet'
@@ -30,6 +33,10 @@ interface Props {
   faturasPagas: FaturaPaga[]
   faturaAnterior: Pick<Lancamento, 'cartao_id' | 'valor'>[]
   atrasados: Lancamento[] // fora do cartão, pendentes de meses anteriores
+  rendas: Renda[]
+  dizimoDesde: string | null
+  dizimos: DizimoDevolvido[]
+  verAtrasos: boolean // mês atual: traz o que ficou em aberto de meses anteriores
 }
 
 function mesVizinho(competencia: string, delta: number) {
@@ -41,6 +48,7 @@ function mesVizinho(competencia: string, delta: number) {
 export default function MesClient({
   familiaId, userId, competencia, tetos: tetosIniciais, lancamentos: iniciais, cartoes, despesas, plano, renda, cartaoInicial,
   faturasPagas: faturasIniciais, faturaAnterior, atrasados: atrasadosIniciais,
+  rendas, dizimoDesde, dizimos: dizimosIniciais, verAtrasos,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -59,8 +67,13 @@ export default function MesClient({
   useEffect(() => { setAtrasados(atrasadosIniciais) }, [atrasadosIniciais])
   const atrasados = useMemo(() => atrasadosBrutos.map(l => espelharLancamento(l, despesas)), [atrasadosBrutos, despesas])
   const [ocupadas, setOcupadas] = useState<Set<string>>(new Set())
+  const [dizimos, setDizimos] = useState(dizimosIniciais)
+  useEffect(() => { setDizimos(dizimosIniciais) }, [dizimosIniciais])
+  const [dizimoAberto, setDizimoAberto] = useState<Saida | null>(null)
   const [filtro, setFiltro] = useState<string>(cartaoInicial ?? 'todos') // 'todos' | 'fora' | id do cartão
-  const [sheet, setSheet] = useState<'novo' | 'fatura' | 'tetos' | 'fixos' | null>(null)
+  const [sheet, setSheet] = useState<'novo' | 'fatura' | 'tetos' | 'fixos' | 'conta' | null>(null)
+  const [atalho, setAtalho] = useState<Atalho | null>(null) // conta fixa nova a partir de um atalho
+  const [pagando, setPagando] = useState<Despesa | null>(null) // conta fixa prevista sendo paga
   const [editando, setEditando] = useState<Lancamento | null>(null)
 
   const refresh = () => startTransition(() => router.refresh())
@@ -80,10 +93,15 @@ export default function MesClient({
   )
 
   // O que sai da conta neste mês, pela data em que sai
-  const saidas = montarSaidas({ mes: competencia, lancamentos, atrasados, cartoes, faturasPagas, faturaAnterior, fixosPendentes })
+  const saidas = montarSaidas({
+    mes: competencia, lancamentos, atrasados, cartoes, faturasPagas, faturaAnterior, fixosPendentes,
+    rendas, dizimos, dizimoDesde, verAtrasos,
+  })
   const hoje = hojeISO()
   const faltaSair = saidas.filter(s => !s.pago).reduce((a, s) => a + s.valor, 0)
   const vencidas = saidas.filter(s => !s.pago && s.data && s.data < hoje).length
+  const contasAbertas = saidas.filter(s => !s.pago).length
+  const atalhos = atalhosPendentes(despesas)
 
   const porCategoria = Object.keys(CATEGORIAS_DESPESA)
     .map(cat => {
@@ -142,6 +160,13 @@ export default function MesClient({
       setFaturasPagas(prev => s.pago
         ? prev.filter(f => !(f.cartao_id === cartaoId && f.competencia.slice(0, 10) === comp))
         : [...prev, { cartao_id: cartaoId, competencia: comp }])
+    } else if (s.tipo === 'dizimo' && s.competenciaDizimo) {
+      const comp = s.competenciaDizimo
+      const registro = { competencia: comp, valor: s.valor, devolvido_em: hoje }
+      const ok = await marcar(s, async () => s.pago
+        ? await supabase.from('fin_dizimos').delete().eq('familia_id', familiaId).eq('competencia', comp)
+        : await supabase.from('fin_dizimos').upsert({ familia_id: familiaId, ...registro }))
+      if (ok) aoDevolver(comp, s.pago ? null : registro)
     } else if (s.tipo === 'previsto' && s.despesa) {
       // Fixo do orçamento pago: vira lançamento do mês, já marcado como pago
       const d = s.despesa
@@ -162,9 +187,15 @@ export default function MesClient({
     refresh()
   }
 
+  function aoDevolver(competenciaDizimo: string, d: DizimoDevolvido | null) {
+    setDizimos(prev => [...prev.filter(x => x.competencia.slice(0, 10) !== competenciaDizimo), ...(d ? [d] : [])])
+    setDizimoAberto(null)
+  }
+
   function abrir(s: Saida) {
+    if (s.tipo === 'dizimo') return setDizimoAberto(s)
     if (s.lancamento) return setEditando(s.lancamento)
-    if (s.tipo === 'previsto') return setSheet('fixos')
+    if (s.tipo === 'previsto' && s.despesa) return setPagando(s.despesa)
     if (s.cartao && s.competenciaFatura) {
       if (s.competenciaFatura === competencia) return filtrar(s.cartao.id)
       router.push(`/financas/mes?mes=${s.competenciaFatura.slice(0, 7)}&cartao=${s.cartao.id}`)
@@ -259,11 +290,11 @@ export default function MesClient({
         <button type="button" onClick={() => setSheet('fatura')} className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card px-2 py-3 text-xs hover:bg-secondary">
           <FileUp className="h-5 w-5 text-primary" /> Importar fatura
         </button>
-        <button type="button" onClick={() => setSheet('fixos')} className="relative flex flex-col items-center gap-1 rounded-lg border border-border bg-card px-2 py-3 text-xs hover:bg-secondary">
-          <ListChecks className="h-5 w-5 text-primary" /> Lançar fixos
-          {fixosPendentes.length > 0 && (
-            <span className="absolute right-2 top-2 rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground">
-              {fixosPendentes.length}
+        <button type="button" onClick={() => setVisao('saidas')} className="relative flex flex-col items-center gap-1 rounded-lg border border-border bg-card px-2 py-3 text-xs hover:bg-secondary">
+          <ListChecks className="h-5 w-5 text-primary" /> Contas do mês
+          {contasAbertas > 0 && (
+            <span className={`absolute right-2 top-2 rounded-full px-1.5 text-[10px] font-medium text-white ${vencidas > 0 ? 'bg-red-500' : 'bg-primary'}`}>
+              {contasAbertas}
             </span>
           )}
         </button>
@@ -283,7 +314,7 @@ export default function MesClient({
                 onClick={() => setVisao(v)}
                 className={`rounded-md px-3 py-1.5 text-sm ${visao === v ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`}
               >
-                {v === 'categorias' ? 'Categorias' : v === 'lista' ? 'Linhas' : 'Saídas'}
+                {v === 'categorias' ? 'Categorias' : v === 'lista' ? 'Linhas' : 'Contas'}
               </button>
             ))}
           </div>
@@ -294,7 +325,16 @@ export default function MesClient({
       )}
 
       {visao === 'saidas' ? (
-        <SaidasLista mes={competencia} saidas={saidas} ocupadas={ocupadas} onAlternar={alternar} onAbrir={abrir} />
+        <SaidasLista
+          mes={competencia}
+          saidas={saidas}
+          ocupadas={ocupadas}
+          atalhos={atalhos}
+          onAlternar={alternar}
+          onAbrir={abrir}
+          onNovaConta={a => { setAtalho(a); setSheet('conta') }}
+          onLancarFixos={fixosPendentes.length > 0 ? () => setSheet('fixos') : undefined}
+        />
       ) : visao === 'lista' ? (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="flex items-center justify-between gap-2 border-b border-border bg-secondary/40 px-4 py-2.5 text-sm">
@@ -442,6 +482,29 @@ export default function MesClient({
           despesas={despesas}
           onSaved={t => { setTetos(t); setSheet(null); refresh() }}
           onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet === 'conta' && (
+        <ContaFixaSheet
+          familiaId={familiaId}
+          userId={userId}
+          atalho={atalho}
+          pendentes={atalhos}
+          onSaved={() => { setSheet(null); setAtalho(null); setVisao('saidas'); refresh() }}
+          onClose={() => { setSheet(null); setAtalho(null) }}
+        />
+      )}
+      {dizimoAberto && (
+        <DizimoSheet familiaId={familiaId} saida={dizimoAberto} onSaved={aoDevolver} onClose={() => setDizimoAberto(null)} />
+      )}
+      {pagando && (
+        <PagarContaSheet
+          familiaId={familiaId}
+          userId={userId}
+          competencia={competencia}
+          despesa={pagando}
+          onSaved={l => { if (l) setLancamentos(prev => [l, ...prev]); setPagando(null); refresh() }}
+          onClose={() => setPagando(null)}
         />
       )}
       {sheet === 'fixos' && (

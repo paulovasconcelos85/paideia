@@ -131,9 +131,9 @@ export function Capa({ r }: { r: Retrato }) {
         {p ? (
           <>
             <div>
-              <p className="text-sm text-white/80">{p.liquido >= 0 ? 'Temos mais do que devemos' : 'Hoje devemos mais do que temos'}</p>
+              <p className="text-sm text-white/80">{p.liquido >= 0 ? 'Tenho mais do que devo' : 'Hoje devo mais do que tenho'}</p>
               <p className="text-5xl font-semibold leading-tight sm:text-6xl">{formatBRL(p.liquido)}</p>
-              <p className="mt-1 text-xs text-white/70">patrimônio líquido: o que temos menos o que devemos</p>
+              <p className="mt-1 text-xs text-white/70">patrimônio líquido: o que tenho menos o que devo</p>
             </div>
             {p.variacao !== null && p.variacao !== 0 && (
               <p className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm">
@@ -145,10 +145,10 @@ export function Capa({ r }: { r: Retrato }) {
           </>
         ) : (
           <div>
-            <p className="text-sm text-white/80">Este mês gastamos</p>
+            <p className="text-sm text-white/80">Este mês gastei</p>
             <p className="text-5xl font-semibold leading-tight">{formatBRL(r.mes.gasto)}</p>
             <Link href="/financas/patrimonio" className="mt-3 inline-block text-sm text-white underline underline-offset-4">
-              Cadastrar o que temos e o que devemos →
+              Cadastrar o que tenho e o que devo →
             </Link>
           </div>
         )}
@@ -169,7 +169,7 @@ export function EsteMes({ r }: { r: Retrato }) {
       {m.planejado > 0 ? (
         <>
           <div>
-            <p className="text-base text-muted-foreground">{m.restante >= 0 ? 'Ainda podemos gastar' : 'Passamos do combinado em'}</p>
+            <p className="text-base text-muted-foreground">{m.restante >= 0 ? 'Ainda posso gastar' : 'Passei do limite em'}</p>
             <p className={`text-5xl font-semibold leading-tight ${m.restante < 0 ? 'text-red-700' : ''}`}>{formatBRL(Math.abs(m.restante))}</p>
           </div>
           <Medidor pct={pct} estado={estado} />
@@ -188,7 +188,7 @@ export function EsteMes({ r }: { r: Retrato }) {
         <>
           <p className="text-5xl font-semibold leading-tight">{formatBRL(m.gasto)}</p>
           <p className="text-sm text-muted-foreground">
-            gastos lançados. Combinem limites na aba <Link href="/financas/mes" className="text-primary underline">Mês</Link> para saber quanto ainda podem gastar.
+            gastos lançados. Defina limites na aba <Link href="/financas/mes" className="text-primary underline">Mês</Link> para saber quanto ainda pode gastar.
           </p>
         </>
       )}
@@ -232,7 +232,7 @@ export function NossasDividas({ r }: { r: Retrato }) {
   const d = r.dividas!
   return (
     <section className="space-y-4 rounded-3xl border border-border bg-card p-6 sm:p-8">
-      <Rotulo>Nossas dívidas</Rotulo>
+      <Rotulo>Minhas dívidas</Rotulo>
       {d.livreEm ? (
         <div>
           <p className="text-base text-muted-foreground">Livres das dívidas em</p>
@@ -259,7 +259,7 @@ export function NossoSonho({ r }: { r: Retrato }) {
   const p = r.plano!
   return (
     <section className="space-y-4 rounded-3xl border border-border bg-card p-6 sm:p-8">
-      <Rotulo>Nosso sonho</Rotulo>
+      <Rotulo>Meu sonho</Rotulo>
       <p className="text-2xl font-semibold leading-snug">{p.titulo}</p>
       {p.metaDefinida ? (
         <>
@@ -270,7 +270,7 @@ export function NossoSonho({ r }: { r: Retrato }) {
           <Medidor pct={p.progresso} estado="neutro" />
           <p className="text-sm text-muted-foreground">
             Faltam <strong className="text-foreground">{formatBRL(p.falta)}</strong>
-            {p.previsao ? <> e, guardando {formatBRL(p.aporte)} por mês, chegamos lá em <strong className="text-foreground">{mesCurto(p.previsao)}</strong>.</> : '. Definam quanto guardar por mês para ver a data.'}
+            {p.previsao ? <> e, guardando {formatBRL(p.aporte)} por mês, chego lá em <strong className="text-foreground">{mesCurto(p.previsao)}</strong>.</> : '. Defina quanto guardar por mês para ver a data.'}
           </p>
         </>
       ) : (
@@ -311,11 +311,11 @@ export function FocoDoMes({ r, onPedirCarta, escrevendo }: { r: Retrato; onPedir
 /** Os capítulos que têm dados, na ordem da apresentação. */
 export function capitulos(r: Retrato) {
   return [
-    { id: 'capa', titulo: 'Como estamos', mostrar: true },
+    { id: 'capa', titulo: 'Como estou', mostrar: true },
     { id: 'mes', titulo: 'Este mês', mostrar: true },
     { id: 'para-onde', titulo: 'Para onde foi', mostrar: r.mes.categorias.length > 0 },
     { id: 'dividas', titulo: 'Dívidas', mostrar: !!r.dividas },
-    { id: 'sonho', titulo: 'Nosso sonho', mostrar: !!r.plano },
+    { id: 'sonho', titulo: 'Meu sonho', mostrar: !!r.plano },
     { id: 'foco', titulo: 'O foco', mostrar: !!r.foco || !!r.carta },
   ].filter(c => c.mostrar)
 }

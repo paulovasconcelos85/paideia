@@ -128,7 +128,7 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
       {/* O placar */}
       <div className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div>
-          <p className="text-xs text-muted-foreground">Patrimônio líquido · o que temos menos o que devemos</p>
+          <p className="text-xs text-muted-foreground">Patrimônio líquido · o que tenho menos o que devo</p>
           <p className={`text-3xl font-semibold tabular-nums ${liquido >= 0 ? 'text-green-700' : 'text-red-600'}`}>{formatBRL(liquido)}</p>
           {variacao !== null && variacao !== 0 && (
             <p className={`mt-1 flex items-center gap-1 text-xs ${variacao > 0 ? 'text-green-700' : 'text-red-600'}`}>
@@ -158,14 +158,14 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
           </div>
         )}
         {historico.length < 2 && (contas.length > 0 || dividas.length > 0 || compras.length > 0) && (
-          <p className="text-xs text-muted-foreground">O histórico se forma sozinho: cada mês em que vocês abrirem o app, o número fica registrado.</p>
+          <p className="text-xs text-muted-foreground">O histórico se forma sozinho: cada mês em que eu abrir o app, o número fica registrado.</p>
         )}
       </div>
 
-      {/* O que temos */}
+      {/* O que tenho */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">O que temos <span className="text-muted-foreground font-normal">· {formatBRL(ativos)}</span></h2>
+          <h2 className="text-sm font-medium">O que tenho <span className="text-muted-foreground font-normal">· {formatBRL(ativos)}</span></h2>
           <button type="button" onClick={() => abrir({ tipo: 'conta', item: null })} className="flex items-center gap-1 text-sm text-primary">
             <Plus className="h-4 w-4" /> Adicionar
           </button>
@@ -199,10 +199,10 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
         onChange={novas => { setCompras(novas); startTransition(() => router.refresh()) }}
       />
 
-      {/* O que devemos */}
+      {/* O que devo */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">O que devemos <span className="text-muted-foreground font-normal">· {formatBRL(passivos)}</span></h2>
+          <h2 className="text-sm font-medium">O que devo <span className="text-muted-foreground font-normal">· {formatBRL(passivos)}</span></h2>
           <button type="button" onClick={() => abrir({ tipo: 'divida', item: null })} className="flex items-center gap-1 text-sm text-primary">
             <Plus className="h-4 w-4" /> Adicionar
           </button>
@@ -285,7 +285,7 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
 
               {economia > 1 && bolaDeNeve.meses !== null && (
                 <p className="text-xs text-muted-foreground">
-                  Pagando primeiro as menores (bola de neve), vocês terminariam em {bolaDeNeve.meses} meses e pagariam{' '}
+                  Pagando primeiro as menores (bola de neve), eu terminaria em {bolaDeNeve.meses} meses e pagaria{' '}
                   <strong>{formatBRL(economia)} a mais de juros</strong>. A bola de neve dá vitórias rápidas, mas a ordem acima custa menos.
                 </p>
               )}
@@ -299,7 +299,7 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
 
       {edicao && (
         <Sheet
-          titulo={edicao.item ? edicao.item.nome : edicao.tipo === 'conta' ? 'Algo que temos' : 'Uma dívida'}
+          titulo={edicao.item ? edicao.item.nome : edicao.tipo === 'conta' ? 'Algo que tenho' : 'Uma dívida'}
           onClose={() => setEdicao(null)}
         >
           <div className="space-y-4">

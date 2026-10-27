@@ -76,7 +76,7 @@ export default function SimuladorIR({ saudeAnual, educacaoAnual }: Props) {
               <div key={m} className={`rounded-lg p-3 ${r.melhor === m ? 'bg-green-50 ring-1 ring-green-300 text-gray-900' : 'bg-secondary/60'}`}>
                 <p className="text-xs text-muted-foreground capitalize">{m}</p>
                 <p className="font-semibold tabular-nums">{formatBRL(m === 'completo' ? r.irCompleto : r.irSimplificado)}</p>
-                {r.melhor === m && <p className="text-[11px] text-green-700">melhor para vocês</p>}
+                {r.melhor === m && <p className="text-[11px] text-green-700">melhor para mim</p>}
               </div>
             ))}
           </div>
