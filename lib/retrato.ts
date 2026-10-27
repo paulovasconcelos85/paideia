@@ -3,7 +3,7 @@ import { buscarPtax } from './cambio'
 import { simularQuitacao } from './dividas'
 import { historicoPatrimonio } from './familia'
 import {
-  CATEGORIAS_DESPESA, comAportado, competenciaISO, despesaMensal, espelharLancamento, lancamentoEssencial, planoPrincipal, projetarPlano, rendaMensal,
+  CATEGORIAS_DESPESA, TIPOS_CONTA, TIPOS_DIVIDA, comAportado, competenciaISO, despesaMensal, espelharLancamento, lancamentoEssencial, planoPrincipal, projetarPlano, rendaMensal,
   type Cartao, type Despesa, type Lancamento, type Plano, type Renda,
 } from './financas'
 import { diagnosticar, type Alerta } from './financas-diagnostico'
@@ -30,7 +30,31 @@ export interface Retrato {
     passivos: number
     variacao: number | null
     historico: { mes: string; valor: number }[]
+    tenho: { nome: string; tipo: string; valor: number }[] // contas, investimentos e o dólar
   } | null
+  // Cada dívida com o que falta: as cadastradas em Patrimônio e as parcelas do Orçamento
+  devo: {
+    nome: string
+    saldo: number
+    parcela: number
+    meses: number | null // meses que faltam (null = no ritmo atual não acaba)
+    fim: string | null   // mês da última parcela
+    detalhe: string      // "SAC · 0,888% a.m.", "parcelas do Orçamento", ...
+  }[]
+  semSaldo: string[] // financiamentos sem saldo devedor informado
+  planos: {
+    id: string
+    titulo: string
+    progresso: number
+    guardado: number
+    meta: number
+    falta: number
+    previsao: string | null
+    aporte: number
+    metaDefinida: boolean
+    ativo: boolean
+    principal: boolean
+  }[]
   dividas: {
     total: number
     livreEm: string | null
@@ -116,13 +140,37 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
       passivos: patrimonio.passivos,
       variacao: penultimo ? patrimonio.liquido - penultimo.valor : null,
       historico,
+      tenho: [
+        ...patrimonio.contas.map(c => ({ nome: c.nome, tipo: TIPOS_CONTA[c.tipo] ?? c.tipo, valor: Number(c.saldo) })),
+        ...(patrimonio.usd > 0 ? [{ nome: `Dólar guardado (US$ ${patrimonio.usd.toLocaleString('pt-BR', { maximumFractionDigits: 2 })})`, tipo: 'Dólar', valor: patrimonio.dolarBRL }] : []),
+      ].sort((a, b) => b.valor - a.valor),
     }
   }
+
+  // ── O que devo, item a item, com os meses que faltam
+  const mesesDepois = (n: number) => {
+    const d = new Date(agora.getFullYear(), agora.getMonth() + n - 1, 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+  }
+  const devo: Retrato['devo'] = [
+    ...patrimonio.dividas.filter(d => Number(d.saldo) > 0).map(d => {
+      const meses = d.amortizacao === 'sac' && d.prazo_meses ? d.prazo_meses : simularQuitacao([d], 0, 'avalanche', agora).meses
+      const juros = Number(d.juros_mensal) > 0 ? ` · ${String(d.juros_mensal).replace('.', ',')}% a.m.` : ''
+      return {
+        nome: d.nome, saldo: Number(d.saldo), parcela: Number(d.parcela), meses, fim: meses ? mesesDepois(meses) : null,
+        detalhe: `${d.amortizacao === 'sac' ? 'SAC' : TIPOS_DIVIDA[d.tipo] ?? 'Dívida'}${juros}`,
+      }
+    }),
+    ...patrimonio.parcelas.map(p => ({
+      nome: p.descricao, saldo: p.total, parcela: p.parcela, meses: p.restantes, fim: p.fim,
+      detalhe: p.noCartao ? 'parcelado no cartão' : 'parcelado',
+    })),
+  ].sort((a, b) => b.saldo - a.saldo)
 
   // ── As dívidas
   const diag = diagnosticar(listaDespesas, listaRendas)
   let dividas: Retrato['dividas'] = null
-  if (patrimonio.dividas.length > 0) {
+  if (patrimonio.passivos > 0) {
     const sim = simularQuitacao(patrimonio.dividas, Math.max(diag.saldo, 0), 'avalanche', agora)
     dividas = {
       total: patrimonio.passivos,
@@ -155,6 +203,19 @@ export async function carregarRetrato(supabase: SupabaseClient, familiaId: strin
     },
     patrimonio: patrimonioRetrato,
     dividas,
+    devo,
+    semSaldo: patrimonio.semSaldo.map(s => s.descricao),
+    planos: listaPlanos
+      .filter(p => p.status !== 'concluido')
+      .map(p => {
+        const proj = projetarPlano(p)
+        return {
+          id: p.id, titulo: p.titulo, progresso: proj.progresso, guardado: proj.guardadoBRL, meta: proj.metaBRL, falta: proj.faltaBRL,
+          previsao: proj.dataPrevista?.toISOString() ?? null, aporte: Number(p.aporte_mensal), metaDefinida: proj.metaBRL > 0,
+          ativo: p.status === 'ativo', principal: principal?.id === p.id,
+        }
+      })
+      .sort((a, b) => Number(b.principal) - Number(a.principal) || Number(b.ativo) - Number(a.ativo) || b.progresso - a.progresso),
     plano: principal && pr ? {
       id: principal.id,
       titulo: principal.titulo,

@@ -66,8 +66,9 @@ export default function Apresentacao({ retrato }: { retrato: Retrato }) {
       </div>
 
       {/* O capítulo */}
-      <div className="flex flex-1 items-center overflow-y-auto px-4 py-6">
-        <div key={lista[i].id} className="slide-in mx-auto w-full max-w-xl">
+      {/* my-auto centraliza sem cortar o topo quando o capítulo é mais alto que a tela */}
+      <div className="flex flex-1 flex-col overflow-y-auto px-4 py-6">
+        <div key={lista[i].id} className="slide-in mx-auto my-auto w-full max-w-xl">
           <Capitulo id={lista[i].id} r={retrato} />
         </div>
       </div>

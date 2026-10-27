@@ -236,25 +236,78 @@ export function ParaOndeFoi({ r }: { r: Retrato }) {
   )
 }
 
+export function OQueTenho({ r }: { r: Retrato }) {
+  const p = r.patrimonio!
+  return (
+    <section className="space-y-4 rounded-3xl border border-border bg-card p-6 sm:p-8">
+      <Rotulo>O que tenho e o que devo</Rotulo>
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <p className="text-xs text-muted-foreground">Tenho</p>
+          <p className="text-xl font-semibold tabular-nums text-green-700 sm:text-2xl">{formatBRL(p.ativos)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Devo</p>
+          <p className="text-xl font-semibold tabular-nums text-red-600 sm:text-2xl">{formatBRL(p.passivos)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Patrimônio líquido</p>
+          <p className={`text-xl font-semibold tabular-nums sm:text-2xl ${p.liquido >= 0 ? 'text-green-700' : 'text-red-600'}`}>{formatBRL(p.liquido)}</p>
+        </div>
+      </div>
+      {p.tenho.length > 0 && (
+        <ul className="max-h-[40vh] divide-y divide-border overflow-y-auto rounded-xl border border-border">
+          {p.tenho.map(t => (
+            <li key={t.nome} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+              <span className="min-w-0">
+                <span className="block truncate">{t.nome}</span>
+                <span className="text-xs text-muted-foreground">{t.tipo}</span>
+              </span>
+              <span className="font-medium tabular-nums text-green-700">{formatBRL(t.valor)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link href="/financas/patrimonio" className="inline-block text-sm text-primary">Ver o patrimônio →</Link>
+    </section>
+  )
+}
+
 export function NossasDividas({ r }: { r: Retrato }) {
-  const d = r.dividas!
+  const total = r.devo.reduce((a, d) => a + d.saldo, 0)
+  const d = r.dividas
   return (
     <section className="space-y-4 rounded-3xl border border-border bg-card p-6 sm:p-8">
       <Rotulo>Minhas dívidas</Rotulo>
-      {d.livreEm ? (
-        <div>
-          <p className="text-base text-muted-foreground">Livres das dívidas em</p>
-          <p className="text-5xl font-semibold capitalize leading-tight">{mesCurto(d.livreEm)}</p>
-          <p className="mt-1 text-sm text-muted-foreground">daqui a {d.meses} meses, guardando a sobra de cada mês para elas</p>
-        </div>
-      ) : (
-        <div>
-          <p className="text-5xl font-semibold leading-tight">{formatBRL(d.total)}</p>
-          <Estado tipo="critico">No ritmo atual, os juros crescem mais rápido do que os pagamentos. É preciso renegociar ou aumentar a sobra.</Estado>
-        </div>
+      <div>
+        <p className="text-base text-muted-foreground">Devo no total</p>
+        <p className="text-5xl font-semibold leading-tight tabular-nums text-red-600">{formatBRL(total)}</p>
+        {d?.livreEm && d.meses ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Livre das dívidas com juros em <strong className="capitalize text-foreground">{mesCurto(d.livreEm)}</strong>, daqui a {d.meses} meses
+          </p>
+        ) : null}
+      </div>
+      <ul className="max-h-[45vh] divide-y divide-border overflow-y-auto rounded-xl border border-border">
+        {r.devo.map(x => (
+          <li key={x.nome} className="space-y-0.5 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate font-medium">{x.nome}</span>
+              <span className="font-semibold tabular-nums text-red-600">{formatBRL(x.saldo)}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {x.detalhe}
+              {x.parcela > 0 && ` · parcela ${formatBRL(x.parcela)}`}
+              {x.meses ? ` · faltam ${x.meses} ${x.meses === 1 ? 'mês' : 'meses'}` : ' · no ritmo atual não acaba'}
+              {x.fim && ` · até ${mesCurto(x.fim)}`}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {r.semSaldo.length > 0 && (
+        <Estado tipo="atencao">Sem saldo devedor informado: {r.semSaldo.join(', ')}. Informe em Patrimônio para entrar na conta.</Estado>
       )}
-      <p className="text-sm text-muted-foreground">Devemos <strong className="text-foreground">{formatBRL(d.total)}</strong> no total.</p>
-      {d.primeira && (
+      {d?.primeira && (
         <p className="rounded-xl bg-secondary/70 px-4 py-3 text-sm">
           Primeiro alvo: <strong>{d.primeira.nome}</strong>{d.primeira.juros > 0 && `, que cobra ${String(d.primeira.juros).replace('.', ',')}% ao mês`}.
         </p>
@@ -263,28 +316,53 @@ export function NossasDividas({ r }: { r: Retrato }) {
   )
 }
 
-export function NossoSonho({ r }: { r: Retrato }) {
-  const p = r.plano!
+export function MeusPlanos({ r }: { r: Retrato }) {
+  const [principal, ...outros] = r.planos
+  const linhaPrevisao = (p: Retrato['planos'][number]) =>
+    !p.metaDefinida ? 'custos a definir'
+      : p.falta <= 0 ? 'meta atingida'
+      : !p.ativo ? 'pausado'
+      : p.previsao ? `chego lá em ${mesCurto(p.previsao)}, guardando ${formatBRL(p.aporte)}/mês`
+      : 'sem aporte mensal'
   return (
     <section className="space-y-4 rounded-3xl border border-border bg-card p-6 sm:p-8">
-      <Rotulo>Meu sonho</Rotulo>
-      <p className="text-2xl font-semibold leading-snug">{p.titulo}</p>
-      {p.metaDefinida ? (
-        <>
-          <div className="flex items-baseline gap-2">
-            <span className="text-5xl font-semibold leading-tight">{Math.round(p.progresso)}%</span>
-            <span className="text-sm text-muted-foreground">do caminho</span>
-          </div>
-          <Medidor pct={p.progresso} estado="neutro" />
-          <p className="text-sm text-muted-foreground">
-            Faltam <strong className="text-foreground">{formatBRL(p.falta)}</strong>
-            {p.previsao ? <> e, guardando {formatBRL(p.aporte)} por mês, chego lá em <strong className="text-foreground">{mesCurto(p.previsao)}</strong>.</> : '. Defina quanto guardar por mês para ver a data.'}
-          </p>
-        </>
-      ) : (
-        <p className="text-sm text-muted-foreground">Preencham os custos do plano para medir o caminho.</p>
+      <Rotulo>{r.planos.length > 1 ? 'Meus planos' : 'Meu sonho'}</Rotulo>
+      <div className="space-y-2">
+        <p className="text-2xl font-semibold leading-snug">{principal.titulo}</p>
+        {principal.metaDefinida ? (
+          <>
+            <div className="flex items-baseline gap-2">
+              <span className="text-5xl font-semibold leading-tight">{Math.round(principal.progresso)}%</span>
+              <span className="text-sm text-muted-foreground">do caminho · {formatBRL(principal.guardado)} de {formatBRL(principal.meta)}</span>
+            </div>
+            <Medidor pct={principal.progresso} estado="neutro" />
+            <p className="text-sm text-muted-foreground">
+              Faltam <strong className="text-foreground">{formatBRL(principal.falta)}</strong>: {linhaPrevisao(principal)}.
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Preencha quanto custa para medir o caminho.</p>
+        )}
+      </div>
+      {outros.length > 0 && (
+        <ul className="max-h-[35vh] space-y-3 overflow-y-auto border-t border-border pt-4">
+          {outros.map(p => (
+            <li key={p.id}>
+              <Link href={`/financas/planos/${p.id}`} className="block space-y-1">
+                <div className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-medium">{p.titulo}</span>
+                  <span className="text-xs tabular-nums text-muted-foreground">{p.metaDefinida ? `${Math.round(p.progresso)}% · ${formatBRL(p.meta)}` : ''}</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div className={`h-full rounded-full ${p.ativo ? 'bg-primary' : 'bg-muted-foreground/40'}`} style={{ width: `${p.progresso}%` }} />
+                </div>
+                <p className="text-xs text-muted-foreground">{linhaPrevisao(p)}</p>
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
-      <Link href={`/financas/planos/${p.id}`} className="inline-block text-sm text-primary">Ver o plano →</Link>
+      <Link href="/financas/planos" className="inline-block text-sm text-primary">Ver os planos →</Link>
     </section>
   )
 }
@@ -322,8 +400,9 @@ export function capitulos(r: Retrato) {
     { id: 'capa', titulo: 'Como estou', mostrar: true },
     { id: 'mes', titulo: 'Este mês', mostrar: true },
     { id: 'para-onde', titulo: 'Para onde foi', mostrar: r.mes.categorias.length > 0 },
-    { id: 'dividas', titulo: 'Dívidas', mostrar: !!r.dividas },
-    { id: 'sonho', titulo: 'Meu sonho', mostrar: !!r.plano },
+    { id: 'tenho', titulo: 'O que tenho', mostrar: !!r.patrimonio },
+    { id: 'dividas', titulo: 'Dívidas', mostrar: r.devo.length > 0 },
+    { id: 'planos', titulo: 'Planos', mostrar: r.planos.length > 0 },
     { id: 'foco', titulo: 'O foco', mostrar: !!r.foco || !!r.carta },
   ].filter(c => c.mostrar)
 }
@@ -333,8 +412,9 @@ export function Capitulo({ id, r, onPedirCarta, escrevendo }: { id: string; r: R
     case 'capa': return <Capa r={r} />
     case 'mes': return <EsteMes r={r} />
     case 'para-onde': return <ParaOndeFoi r={r} />
+    case 'tenho': return <OQueTenho r={r} />
     case 'dividas': return <NossasDividas r={r} />
-    case 'sonho': return <NossoSonho r={r} />
+    case 'planos': return <MeusPlanos r={r} />
     case 'foco': return <FocoDoMes r={r} onPedirCarta={onPedirCarta} escrevendo={escrevendo} />
     default: return null
   }

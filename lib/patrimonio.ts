@@ -40,8 +40,10 @@ export function dividasDoOrcamento(despesas: Despesa[], dividas: Pick<Divida, 'n
     const n = normalizar(descricao)
     return nomes.some(x => x === n || x.includes(n) || n.includes(x))
   }
+  // Mais de 5 anos pela frente é financiamento: a soma das parcelas traria os juros futuros; pede o saldo devedor
+  const longa = (d: Despesa) => (parcelasRestantes(d, hoje) ?? 0) > 60
   const parcelas: ParcelaDevida[] = despesas
-    .filter(d => d.ativo && d.frequencia === 'parcelada' && !jaCadastrada(d.descricao))
+    .filter(d => d.ativo && d.frequencia === 'parcelada' && !longa(d) && !jaCadastrada(d.descricao))
     .map(d => {
       const fim = fimParcelas(d, hoje)
       return {
@@ -53,7 +55,10 @@ export function dividasDoOrcamento(despesas: Despesa[], dividas: Pick<Divida, 'n
     .filter(p => p.total > 0)
     .sort((a, b) => b.total - a.total)
   const semSaldo: DividaSemSaldo[] = despesas
-    .filter(d => d.ativo && d.frequencia === 'mensal' && (d.categoria === 'dividas' || PARECE_DIVIDA.test(normalizar(d.descricao))) && !jaCadastrada(d.descricao))
+    .filter(d => d.ativo && !jaCadastrada(d.descricao) && (
+      (d.frequencia === 'parcelada' && longa(d)) ||
+      (d.frequencia === 'mensal' && (d.categoria === 'dividas' || PARECE_DIVIDA.test(normalizar(d.descricao))))
+    ))
     .map(d => ({ id: d.id, descricao: d.descricao, valor: Number(d.valor) }))
   return { parcelas, semSaldo, totalParcelas: parcelas.reduce((a, p) => a + p.total, 0) }
 }

@@ -145,7 +145,10 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
   const foraDoCartao = despesas.filter(d => !d.cartao_id || !cartoes.some(c => c.id === d.cartao_id))
   const totalFaturas = cartoes.reduce((a, c) => a + projetarGastosMensais(doCartao(c.id), 1)[0], 0)
   const totalFora = projetarGastosMensais(foraDoCartao, 1)[0]
-  const totalParcelado = despesas.reduce((a, d) => a + valorRestante(d), 0)
+  // Financiamento (mais de 5 anos) fica de fora: a soma das parcelas dele inclui os juros futuros; a dívida é o saldo devedor
+  const longa = (d: Despesa) => (parcelasRestantes(d) ?? 0) > 60
+  const totalParcelado = despesas.filter(d => !longa(d)).reduce((a, d) => a + valorRestante(d), 0)
+  const temLonga = despesas.some(d => d.ativo && longa(d))
 
   const baseProjecao =
     filtroProjecao === 'todos' ? despesas : filtroProjecao === 'fora' ? foraDoCartao : doCartao(filtroProjecao)
@@ -305,7 +308,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
           </p>
           {restantes !== null && restantes > 0 && fim && (
             <p className="text-xs text-amber-700">
-              Faltam {formatBRL(valorRestante(d))} · {restantes === 1 ? 'última parcela este mês' : `termina em ${formatMesAno(fim)}`}
+              {longa(d) ? `Faltam ${restantes} parcelas` : `Faltam ${formatBRL(valorRestante(d))}`} · {restantes === 1 ? 'última parcela este mês' : `termina em ${formatMesAno(fim)}`}
             </p>
           )}
         </div>
@@ -381,7 +384,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
             <p className="text-xs text-amber-800">Parcelado: quanto ainda falta pagar</p>
             <p className="text-lg font-semibold tabular-nums text-amber-900">{formatBRL(totalParcelado)}</p>
-            <p className="text-xs text-amber-800">soma de todas as parcelas futuras</p>
+            <p className="text-xs text-amber-800">soma das parcelas futuras{temLonga ? ' (sem o financiamento: o saldo dele está em Patrimônio)' : ''}</p>
           </div>
         </div>
       )}

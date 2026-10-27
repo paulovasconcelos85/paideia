@@ -109,8 +109,17 @@ export function diagnosticar(despesas: Despesa[], rendas: Renda[]): Diagnostico 
   // 2. Comprometimento com dívidas
   if (renda > 0 && dividas > 0) {
     const p = pct(dividas, renda)
-    const saldoParcelado = ativas.reduce((a, d) => a + valorRestante(d), 0)
-    const faltam = saldoParcelado > 0 ? ` Ainda faltam ${formatBRL(saldoParcelado)} em parcelas a pagar.` : ''
+    // Financiamento (mais de 5 anos pela frente) não entra na soma: a soma das parcelas inclui os juros futuros.
+    // O que se deve dele é o saldo devedor, em Patrimônio.
+    const longas = ativas.filter(d => (parcelasRestantes(d) ?? 0) > 60)
+    const curtas = ativas.filter(d => !longas.includes(d))
+    const saldoParcelado = curtas.reduce((a, d) => a + valorRestante(d), 0)
+    const mensalLongas = longas.reduce((a, d) => a + d.valor, 0)
+    const faltam =
+      (longas.length
+        ? ` Desse total, ${formatBRL(mensalLongas)} são de ${longas.map(d => `${d.descricao} (${parcelasRestantes(d)} meses)`).join(', ')}: o que se deve dele é o saldo devedor, em Patrimônio.`
+        : '') +
+      (saldoParcelado > 0 ? ` Das outras parcelas, faltam ${formatBRL(saldoParcelado)} no total.` : '')
     alertas.push({
       nivel: p > 30 ? 'critico' : p > 15 ? 'atencao' : 'oportunidade',
       titulo: `${p.toFixed(0)}% da renda vai para dívidas e parcelas`,
