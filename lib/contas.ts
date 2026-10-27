@@ -25,6 +25,7 @@ export interface Conta {
   competenciaFatura?: string
   linhas?: Lancamento[]
   previstoNaFatura?: number
+  previstos?: { descricao: string; valor: number; parcela: string | null }[] // fixos e parcelas do cartão ainda não lançados
   competenciaDizimo?: string
   renda?: number
   dizimo?: DizimoDevolvido
@@ -49,7 +50,9 @@ interface Entrada {
   aportes?: Aporte[]
 }
 
-export const vencimentoDe = (l: Pick<Lancamento, 'vencimento' | 'data'>) => l.vencimento ?? l.data
+const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+export const vencimentoDe =(l: Pick<Lancamento, 'vencimento' | 'data'>) => l.vencimento ?? l.data
 
 export function montarContas(e: Entrada): Conta[] {
   const { mes, lancamentos, atrasados, cartoes, despesas } = e
@@ -92,16 +95,28 @@ function montarFaturas({ mes, lancamentos, cartoes, despesas, faturasPagas, fatu
     const doMes = competencia === mes
     const linhas = (doMes ? lancamentos : faturaAnterior).filter(l => l.cartao_id === c.id)
     const lancadas = new Set(linhas.map(l => l.despesa_id).filter(Boolean))
-    // Fixos e parcelas do cartão que ainda não chegaram à fatura
-    const previsto = doMes
-      ? despesas.filter(d => d.cartao_id === c.id && !lancadas.has(d.id) && ocorreNoMes(d, mes)).reduce((a, d) => a + Number(d.valor), 0)
-      : 0
+    // A importação só liga parcelas ao Orçamento: um fixo (ex.: Spotify) chega solto. Conta como lançado
+    // quando há uma compra sem ligação com o mesmo nome e valor próximo, para não somar duas vezes.
+    const soltas = linhas.filter(l => !l.despesa_id)
+    for (const d of despesas.filter(x => x.cartao_id === c.id && !lancadas.has(x.id))) {
+      const chave = normalizar(d.descricao).split(/[^a-z0-9]+/).find(p => p.length >= 4)
+      const achou = chave && soltas.some(l =>
+        normalizar(l.descricao).replace(/[^a-z0-9]/g, '').includes(chave) &&
+        Math.abs(Number(l.valor) - Number(d.valor)) <= Number(d.valor) * 0.1)
+      if (achou) lancadas.add(d.id)
+    }
+    // A fatura parte dos fixos e parcelas do cartão (Orçamento) que ainda não foram lançados nela,
+    // inclusive quando vence no mês seguinte ao fechamento; o que for lançado substitui o previsto
+    const previstos = despesas
+      .filter(d => d.cartao_id === c.id && !lancadas.has(d.id) && ocorreNoMes(d, competencia))
+      .map(d => ({ descricao: d.descricao, valor: Number(d.valor), parcela: rotuloParcela(d, competencia) }))
+    const previsto = previstos.reduce((a, d) => a + d.valor, 0)
     const total = linhas.reduce((a, l) => a + Number(l.valor), 0) + previsto
     if (total === 0) return []
     return [{
       chave: `f-${c.id}`, tipo: 'fatura', descricao: `Fatura ${c.nome}`, valor: total,
       vencimento: vencimentoFatura(c, competencia), pago: pagas.has(`${c.id}|${competencia}`),
-      cartao: c, competenciaFatura: competencia, linhas, previstoNaFatura: previsto,
+      cartao: c, competenciaFatura: competencia, linhas, previstoNaFatura: previsto, previstos,
     }]
   })
 }

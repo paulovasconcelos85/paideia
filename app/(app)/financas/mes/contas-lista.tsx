@@ -81,7 +81,8 @@ export default function ContasLista({
                   ? <span className={vencida ? 'font-medium text-red-600' : ''}>{vencida ? 'venceu' : c.pago ? 'vencimento' : 'vence'} {diaMes(c.vencimento)}</span>
                   : 'sem vencimento'}
               {c.atrasada && !c.pago && <span className="text-red-600"> · em aberto</span>}
-              {fatura && c.linhas && <> · {c.linhas.length} {c.linhas.length === 1 ? 'compra' : 'compras'}</>}
+              {fatura && c.linhas && c.linhas.length > 0 && <> · {c.linhas.length} {c.linhas.length === 1 ? 'lançada' : 'lançadas'}</>}
+              {fatura && !!c.previstoNaFatura && <> · {formatBRL(c.previstoNaFatura)} previstos</>}
             </p>
           </button>
 
@@ -121,12 +122,20 @@ export default function ContasLista({
                 </button>
               </li>
             ))}
-            {!!c.previstoNaFatura && (
-              <li className="flex items-center justify-between py-2 pl-12 pr-4 text-xs text-muted-foreground">
-                <span>Fixos e parcelas que ainda vão entrar</span>
-                <span className="tabular-nums">{formatBRL(c.previstoNaFatura)}</span>
+            {(c.previstos ?? []).length > 0 && (
+              <li className="bg-amber-50/60 px-4 py-1.5 pl-12 text-[11px] font-medium text-amber-800">
+                Previsto pelo Orçamento, ainda não lançado · {formatBRL(c.previstoNaFatura ?? 0)}
               </li>
             )}
+            {(c.previstos ?? []).map((p, i) => (
+              <li key={`p-${i}`} className="flex items-center gap-3 py-2 pl-12 pr-4 text-xs italic text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate">
+                  {p.descricao}{p.parcela ? ` · ${p.parcela}` : ''}
+                </span>
+                <span className="text-[10px] not-italic">previsto</span>
+                <span className="w-24 text-right tabular-nums">{formatBRL(p.valor)}</span>
+              </li>
+            ))}
           </ul>
         )}
       </li>
