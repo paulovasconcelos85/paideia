@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
-import { AlertTriangle, CheckCircle2, CircleAlert, Lightbulb, TrendingDown, TrendingUp } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CircleAlert, Lightbulb, MapPin, TrendingDown, TrendingUp } from 'lucide-react'
 import { formatBRL, formatMesAno, nomeMes } from '@/lib/financas'
+import { capaDoDia } from '@/lib/imagens'
 import type { Retrato } from '@/lib/retrato'
 
 // ─── Peças ────────────────────────────────────────────────────────────
@@ -119,10 +121,16 @@ function BarrasCategorias({ itens, total }: { itens: { cat: string; label: strin
 
 export function Capa({ r }: { r: Retrato }) {
   const p = r.patrimonio
+  const foto = capaDoDia(r.hoje)
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#2a2185] via-[#3b2fb0] to-[#6b57e0] p-6 text-white shadow-lg sm:p-8">
-      <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
-      <div className="relative space-y-5">
+    <section className="relative overflow-hidden rounded-3xl bg-[#2a2185] p-6 pb-10 text-white shadow-lg sm:p-8 sm:pb-10">
+      {/* O destino ao fundo: cada mês no azul aproxima */}
+      <Image src={foto.src} alt="" fill priority placeholder="blur" sizes="(min-width: 1024px) 1100px, 100vw" className="object-cover" />
+      <div className="absolute inset-0 bg-gradient-to-br from-[#1e1760]/90 via-[#2a2185]/75 to-[#2a2185]/30" />
+      <p className="absolute bottom-3 right-4 flex items-center gap-1 text-[11px] text-white/80 drop-shadow">
+        <MapPin className="h-3 w-3" /> {foto.lugar}
+      </p>
+      <div className="relative space-y-5 drop-shadow-sm">
         <div>
           <Rotulo claro>{r.familiaNome}</Rotulo>
           <h2 className="mt-1 text-2xl font-semibold">{nomeMes(r.competencia)}</h2>

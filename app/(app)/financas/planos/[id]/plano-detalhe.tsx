@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Plus, Star, Trash2, X } from 'lucide-react'
@@ -9,6 +10,7 @@ import {
   STATUS_PLANO, formatBRL, formatMesAno, formatMoeda, parseBRL, projetarPlano,
   type EtapaPlano, type Moeda, type Plano, type StatusPlano,
 } from '@/lib/financas'
+import { BRASAO_HARVARD, fotoDoPlano } from '@/lib/imagens'
 
 interface Props {
   plano: Plano
@@ -70,6 +72,7 @@ export default function PlanoDetalhe({ plano, saldoMensal, aportesOutros, ptax }
   }), [plano, form, itens])
 
   const pr = projetarPlano(atual)
+  const imagem = fotoDoPlano({ titulo: form.titulo, descricao: form.descricao, moeda: form.moeda })
   const disponivel = Math.max(saldoMensal - aportesOutros, 0)
   const maxSlider = Math.max(
     Math.ceil((Math.max(saldoMensal, 0) * 1.5) / 50) * 50,
@@ -137,6 +140,21 @@ export default function PlanoDetalhe({ plano, saldoMensal, aportesOutros, ptax }
           <Trash2 className="w-4 h-4" /> Excluir
         </button>
       </div>
+
+      {/* O destino do plano: a foto acompanha o que o título e a descrição dizem */}
+      {imagem && (
+        <div className="relative h-44 overflow-hidden rounded-2xl sm:h-56">
+          <Image src={imagem.foto.src} alt={imagem.foto.lugar} fill priority placeholder="blur" sizes="(min-width: 1024px) 1100px, 100vw" className="object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+          {imagem.harvard && (
+            <Image src={BRASAO_HARVARD} alt="Harvard" width={64} height={62} className="absolute right-4 top-4 drop-shadow-lg" />
+          )}
+          <div className="absolute bottom-3 left-4 right-4 text-white drop-shadow">
+            <p className="text-xs text-white/85">{imagem.foto.lugar}</p>
+            <p className="text-sm font-medium">{pr.progresso.toFixed(0)}% do caminho</p>
+          </div>
+        </div>
+      )}
 
       {/* Identidade */}
       <div className="space-y-3">

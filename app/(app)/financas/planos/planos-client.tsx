@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, ChevronRight, Map, Plus } from 'lucide-react'
@@ -9,6 +10,7 @@ import {
   STATUS_PLANO, formatBRL, formatMesAno, formatMoeda, projetarPlano, type Plano,
 } from '@/lib/financas'
 import { MODELOS_PLANO } from '@/lib/planos-modelos'
+import { BRASAO_HARVARD, fotoDoPlano } from '@/lib/imagens'
 
 interface Props {
   userId: string
@@ -100,12 +102,30 @@ export default function PlanosClient({ userId, familiaId, planos, saldoMensal }:
           <div className="grid gap-4 sm:grid-cols-2">
             {planos.map(p => {
               const pr = projetarPlano(p)
+              const imagem = fotoDoPlano(p)
               return (
                 <Link
                   key={p.id}
                   href={`/financas/planos/${p.id}`}
-                  className="group rounded-lg border border-border bg-card p-5 space-y-3 hover:border-primary/50 transition-colors"
+                  className="group overflow-hidden rounded-lg border border-border bg-card p-5 space-y-3 hover:border-primary/50 transition-colors"
                 >
+                  {imagem && (
+                    <div className="relative -mx-5 -mt-5 mb-4 h-32 overflow-hidden">
+                      <Image
+                        src={imagem.foto.src}
+                        alt={imagem.foto.lugar}
+                        fill
+                        placeholder="blur"
+                        sizes="(min-width: 640px) 50vw, 100vw"
+                        className="object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                      {imagem.harvard && (
+                        <Image src={BRASAO_HARVARD} alt="Harvard" width={44} height={43} className="absolute right-3 top-3 drop-shadow-lg" />
+                      )}
+                      <p className="absolute bottom-2 left-3 text-[11px] text-white/90">{imagem.foto.lugar}</p>
+                    </div>
+                  )}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="font-medium truncate">{p.titulo}</p>

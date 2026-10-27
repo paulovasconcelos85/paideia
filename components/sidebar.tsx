@@ -9,6 +9,7 @@ import {
   NotebookPen, Quote, Settings, Users, Wallet, X,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { FOTOS } from '@/lib/imagens'
 import type { Profile } from '@/lib/types'
 
 // Sempre visíveis, no menu lateral e na barra inferior do celular
@@ -116,6 +117,16 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
             )}
           </div>
         </nav>
+
+        {/* O destino, sempre à vista */}
+        <Link href="/financas/planos" className="group relative mx-3 mb-3 block h-24 overflow-hidden rounded-xl">
+          <Image src={FOTOS.bostonCharles.src} alt="" fill placeholder="blur" sizes="232px" className="object-cover transition-transform duration-500 group-hover:scale-105" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+          <div className="absolute bottom-2 left-3 text-white">
+            <p className="text-sm font-semibold leading-tight">Rumo a Boston</p>
+            <p className="text-[11px] text-white/80">ver meus planos →</p>
+          </div>
+        </Link>
 
         <div className="border-t border-border p-4">
           <div className="mb-3 flex items-center gap-3">

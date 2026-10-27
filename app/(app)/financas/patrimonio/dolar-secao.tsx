@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { DollarSign, Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatCotacao, type Ptax } from '@/lib/cambio'
 import { formatBRL, formatMoeda, hojeISO, parseBRL } from '@/lib/financas'
+import { FOTOS } from '@/lib/imagens'
 import type { CompraDolar } from '@/lib/patrimonio'
 import Sheet from '../_components/sheet'
 
@@ -93,7 +95,14 @@ export default function DolarSecao({ familiaId, userId, compras, ptax, onChange 
         </button>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+      <div className="overflow-hidden rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="relative -mx-4 -mt-4 mb-1 h-24 overflow-hidden">
+          <Image src={FOTOS.dolar.src} alt="" fill placeholder="blur" sizes="(min-width: 1024px) 1100px, 100vw" className="object-cover object-center" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0f3d2e]/85 via-[#0f3d2e]/50 to-transparent" />
+          <p className="absolute bottom-3 left-4 text-sm font-medium text-white drop-shadow">
+            {usd > 0 ? `${formatMoeda(usd, 'USD')} guardados para a mudança` : 'Cada dólar guardado é um passo até lá'}
+          </p>
+        </div>
         {ptax ? (
           <div className="flex items-center gap-4">
             <div className="flex-shrink-0">

@@ -2,8 +2,10 @@
 
 import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { BookOpen } from 'lucide-react'
+import Image from 'next/image'
+import { BookOpen, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { FOTOS } from '@/lib/imagens'
 
 export default function LoginPage() {
   const supabase = createClient()
@@ -18,8 +20,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="w-full max-w-sm space-y-8 px-4">
+    <div className="relative flex min-h-screen items-center justify-center bg-[#1e1760] px-4">
+      <Image src={FOTOS.bostonSkyline.src} alt="" fill priority placeholder="blur" sizes="100vw" className="object-cover" />
+      <div className="absolute inset-0 bg-gradient-to-b from-[#1e1760]/40 via-[#1e1760]/20 to-[#1e1760]/70" />
+      <p className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 right-0 flex items-center justify-center gap-1 text-xs text-white/85 drop-shadow">
+        <MapPin className="h-3 w-3" /> {FOTOS.bostonSkyline.lugar}
+      </p>
+
+      <div className="relative w-full max-w-sm space-y-8 rounded-2xl bg-background/95 p-6 shadow-2xl backdrop-blur sm:p-8">
         <div className="space-y-3 text-center">
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
             <BookOpen className="h-7 w-7 text-primary" />
