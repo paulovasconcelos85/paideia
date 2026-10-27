@@ -123,7 +123,10 @@ export function parcelasRestantes(d: DespesaParcelas, hoje = new Date()): number
 /** Número da parcela cobrada num mês (ex.: 4 em "4/12"), a partir do orçamento. null se não der para saber. */
 export function parcelaNoMes(d: DespesaParcelas & Pick<Despesa, 'parcelas_total'>, competencia: string): number | null {
   if (d.frequencia !== 'parcelada' || !d.parcelas_total) return null
-  const restantes = parcelasRestantes(d, new Date(`${competencia}T12:00:00`))
+  const mes = new Date(`${competencia}T12:00:00`)
+  // Antes do mês de referência faltavam mais parcelas (meses de histórico)
+  const antes = d.parcelas_ref ? mesesEntre(mes, new Date(`${d.parcelas_ref}T12:00:00`)) : 0
+  const restantes = antes > 0 && d.parcelas_restantes !== null ? d.parcelas_restantes + antes : parcelasRestantes(d, mes)
   if (restantes === null) return null
   const n = d.parcelas_total - restantes + 1
   return n >= 1 && n <= d.parcelas_total ? n : null
@@ -473,7 +476,9 @@ export function dizimoDoMes(rendas: Pick<Renda, 'valor' | 'frequencia' | 'ativo'
 /** A conta fixa cai neste mês? Respeita início, pausa e o fim das parcelas. Anuais ficam de fora (entram quando lançadas). */
 export function ocorreNoMes(d: Despesa, competencia: string): boolean {
   if (!d.ativo) return false
-  if (d.inicio && d.inicio.slice(0, 7) > competencia.slice(0, 7)) return false
+  // Começa no primeiro vencimento; sem ele, no mês em que foi cadastrada (não inventa contas no passado)
+  const inicio = d.inicio ?? d.created_at
+  if (inicio && inicio.slice(0, 7) > competencia.slice(0, 7)) return false
   if (d.frequencia === 'mensal') return true
   if (d.frequencia === 'parcelada') return (parcelasRestantes(d, new Date(`${competencia}T12:00:00`)) ?? 1) > 0
   return false
@@ -484,6 +489,7 @@ export function rotuloParcela(d: Despesa, competencia: string): string | null {
   if (d.frequencia !== 'parcelada') return null
   const n = parcelaNoMes(d, competencia)
   if (n && d.parcelas_total) return `${n}/${d.parcelas_total}`
+  if (d.parcelas_total || (d.parcelas_ref && competencia < d.parcelas_ref.slice(0, 10))) return null // fora das parcelas
   const r = parcelasRestantes(d, new Date(`${competencia}T12:00:00`))
   if (r === null) return null
   return r <= 1 ? 'última' : `faltam ${r}`

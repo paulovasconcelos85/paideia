@@ -196,7 +196,8 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
                     </td>
                     <td className="border-b border-r border-border px-3 py-2 text-right font-semibold">{m.total ? formatBRL(m.total) : ''}</td>
                     <td className={`border-b border-r border-border px-3 py-2 text-right ${sobra >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                      {m.renda > 0 && m.total > 0 ? formatBRL(sobra) : ''}
+                      {/* Só do mês atual em diante: a renda cadastrada é a de hoje */}
+                      {m.renda > 0 && m.total > 0 && m.mes >= mesAtual ? formatBRL(sobra) : ''}
                     </td>
                     {colunas.map(col => {
                       const cel = m.celulas[col]
