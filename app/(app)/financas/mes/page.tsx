@@ -29,7 +29,8 @@ export default async function MesPage({ searchParams }: { searchParams: { mes?: 
       supabase.from('fin_planos').select('*').eq('familia_id', familiaId),
       // Saídas do mês: faturas já pagas, a fatura anterior (pode vencer neste mês) e contas atrasadas
       supabase.from('fin_faturas').select('cartao_id, competencia').eq('familia_id', familiaId).in('competencia', [anterior, competencia]),
-      supabase.from('fin_lancamentos').select('cartao_id, valor').eq('familia_id', familiaId).eq('competencia', anterior).not('cartao_id', 'is', null),
+      supabase.from('fin_lancamentos').select('*').eq('familia_id', familiaId).eq('competencia', anterior).not('cartao_id', 'is', null)
+        .order('data', { ascending: false }),
       ehMesAtual
         ? supabase.from('fin_lancamentos').select('*').eq('familia_id', familiaId).lt('competencia', competencia)
             .is('cartao_id', null).eq('pago', false).order('vencimento')
@@ -53,7 +54,7 @@ export default async function MesPage({ searchParams }: { searchParams: { mes?: 
       plano={planoPrincipal((planos ?? []) as Plano[])}
       renda={((rendas ?? []) as Renda[]).reduce((a, r) => a + rendaMensal(r), 0)}
       faturasPagas={(faturasPagas ?? []) as FaturaPaga[]}
-      faturaAnterior={(faturaAnterior ?? []) as Pick<Lancamento, 'cartao_id' | 'valor'>[]}
+      faturaAnterior={(faturaAnterior ?? []) as Lancamento[]}
       atrasados={(atrasados ?? []) as Lancamento[]}
       rendas={(rendas ?? []) as Renda[]}
       dizimoDesde={(dizimoConfig?.dizimo_desde as string | undefined) ?? null}

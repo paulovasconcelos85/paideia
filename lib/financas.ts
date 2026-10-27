@@ -17,8 +17,9 @@ export interface Despesa {
   cartao_id: string | null
   dia_vencimento: number | null
   essencial: boolean
-  ativo: boolean
+  ativo: boolean // false = pausada
   observacoes: string | null
+  inicio?: string | null // primeiro vencimento (YYYY-MM-DD): antes desse mês a conta não aparece
   created_at: string
 }
 
@@ -467,4 +468,23 @@ export function rendaDoMes(rendas: Pick<Renda, 'valor' | 'frequencia' | 'ativo' 
 
 export function dizimoDoMes(rendas: Pick<Renda, 'valor' | 'frequencia' | 'ativo' | 'mes_recebimento'>[], competencia: string): number {
   return Math.round(rendaDoMes(rendas, competencia) * DIZIMO * 100) / 100
+}
+
+/** A conta fixa cai neste mês? Respeita início, pausa e o fim das parcelas. Anuais ficam de fora (entram quando lançadas). */
+export function ocorreNoMes(d: Despesa, competencia: string): boolean {
+  if (!d.ativo) return false
+  if (d.inicio && d.inicio.slice(0, 7) > competencia.slice(0, 7)) return false
+  if (d.frequencia === 'mensal') return true
+  if (d.frequencia === 'parcelada') return (parcelasRestantes(d, new Date(`${competencia}T12:00:00`)) ?? 1) > 0
+  return false
+}
+
+/** Rótulo da parcela no mês: "2/5", "faltam 3" (sem total conhecido) ou "última". null se não for parcelada. */
+export function rotuloParcela(d: Despesa, competencia: string): string | null {
+  if (d.frequencia !== 'parcelada') return null
+  const n = parcelaNoMes(d, competencia)
+  if (n && d.parcelas_total) return `${n}/${d.parcelas_total}`
+  const r = parcelasRestantes(d, new Date(`${competencia}T12:00:00`))
+  if (r === null) return null
+  return r <= 1 ? 'última' : `faltam ${r}`
 }

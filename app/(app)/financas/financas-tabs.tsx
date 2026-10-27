@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 const TABS = [
   { href: '/financas', label: 'Início', ativa: (p: string) => p === '/financas' || p.startsWith('/financas/diagnostico') },
   { href: '/financas/mes', label: 'Mês', ativa: (p: string) => p.startsWith('/financas/mes') },
+  { href: '/financas/ano', label: 'Ano', ativa: (p: string) => p.startsWith('/financas/ano') },
   { href: '/financas/patrimonio', label: 'Patrimônio', ativa: (p: string) => p.startsWith('/financas/patrimonio') },
   { href: '/financas/planos', label: 'Planos', ativa: (p: string) => p.startsWith('/financas/planos') },
   { href: '/financas/gastos', label: 'Orçamento', ativa: (p: string) => p.startsWith('/financas/gastos') || p.startsWith('/financas/rendas') },

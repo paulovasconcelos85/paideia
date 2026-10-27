@@ -3,12 +3,12 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatBRL, formatDiaMes, hojeISO, nomeMes, parseBRL, type DizimoDevolvido } from '@/lib/financas'
-import type { Saida } from '@/lib/saidas'
+import type { Conta } from '@/lib/contas'
 import Sheet from '../_components/sheet'
 
 interface Props {
   familiaId: string
-  saida: Saida // tipo 'dizimo'
+  saida: Conta // tipo 'dizimo'
   onSaved: (competencia: string, d: DizimoDevolvido | null) => void
   onClose: () => void
 }

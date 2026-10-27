@@ -3,21 +3,20 @@
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronLeft, ChevronRight, CreditCard, FileUp, ListChecks, Plus, SlidersHorizontal } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, FileUp, Plus, SlidersHorizontal } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  CATEGORIAS_DESPESA, despesaMensal, espelharLancamento, formatBRL, formatDiaMes, hojeISO, lancamentoEssencial, nomeMes, parcelasRestantes,
+  CATEGORIAS_DESPESA, espelharLancamento, formatBRL, hojeISO, lancamentoEssencial, nomeMes, rendaDoMes,
   type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Renda,
 } from '@/lib/financas'
-import { dataPagamento, montarSaidas, type Saida } from '@/lib/saidas'
+import { montarContas, type Conta } from '@/lib/contas'
 import LancamentoSheet from '../_components/lancamento-sheet'
-import SaidasLista from './saidas-lista'
-import ContaFixaSheet, { atalhosPendentes, type Atalho } from './conta-fixa-sheet'
-import PagarContaSheet from './pagar-conta-sheet'
+import ContasLista from './contas-lista'
+import ContaSheet from './conta-sheet'
+import NovaContaSheet from './nova-conta-sheet'
 import DizimoSheet from './dizimo-sheet'
 import ImportarFatura from './importar-fatura'
 import TetosSheet from './tetos-sheet'
-import FixosSheet from './fixos-sheet'
 
 interface Props {
   familiaId: string
@@ -29,14 +28,14 @@ interface Props {
   despesas: Despesa[]
   plano: Plano | null
   renda: number
-  cartaoInicial: string | null // vindo de Gastos fixos: abre a lista daquele cartão
+  cartaoInicial: string | null // vindo do Orçamento: abre a fatura daquele cartão
   faturasPagas: FaturaPaga[]
-  faturaAnterior: Pick<Lancamento, 'cartao_id' | 'valor'>[]
-  atrasados: Lancamento[] // fora do cartão, pendentes de meses anteriores
+  faturaAnterior: Lancamento[]
+  atrasados: Lancamento[]
   rendas: Renda[]
   dizimoDesde: string | null
   dizimos: DizimoDevolvido[]
-  verAtrasos: boolean // mês atual: traz o que ficou em aberto de meses anteriores
+  verAtrasos: boolean
 }
 
 function mesVizinho(competencia: string, delta: number) {
@@ -47,62 +46,147 @@ function mesVizinho(competencia: string, delta: number) {
 
 export default function MesClient({
   familiaId, userId, competencia, tetos: tetosIniciais, lancamentos: iniciais, cartoes, despesas, plano, renda, cartaoInicial,
-  faturasPagas: faturasIniciais, faturaAnterior, atrasados: atrasadosIniciais,
+  faturasPagas: faturasIniciais, faturaAnterior: anteriorInicial, atrasados: atrasadosIniciais,
   rendas, dizimoDesde, dizimos: dizimosIniciais, verAtrasos,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
+  const refresh = () => startTransition(() => router.refresh())
+
+  // Estado local: marcar pago e mudar valor respondem na hora, sem recarregar a página
   const [brutos, setLancamentos] = useState(iniciais)
   useEffect(() => { setLancamentos(iniciais) }, [iniciais])
-  // O que está ligado a "Fixos e parcelas" aparece com o nome, a categoria e a parcela de lá
-  const lancamentos = useMemo(() => brutos.map(l => espelharLancamento(l, despesas)), [brutos, despesas])
-  const [tetos, setTetos] = useState(tetosIniciais)
-  const [aberta, setAberta] = useState<string | null>(null)
-  // Por categoria (resumo) ou em lista (todas as linhas, para conferir com a fatura)
-  const [visao, setVisao] = useState<'categorias' | 'lista' | 'saidas'>(cartaoInicial ? 'lista' : 'categorias')
-  const [faturasPagas, setFaturasPagas] = useState(faturasIniciais)
-  useEffect(() => { setFaturasPagas(faturasIniciais) }, [faturasIniciais])
   const [atrasadosBrutos, setAtrasados] = useState(atrasadosIniciais)
   useEffect(() => { setAtrasados(atrasadosIniciais) }, [atrasadosIniciais])
-  const atrasados = useMemo(() => atrasadosBrutos.map(l => espelharLancamento(l, despesas)), [atrasadosBrutos, despesas])
-  const [ocupadas, setOcupadas] = useState<Set<string>>(new Set())
+  const [faturasPagas, setFaturasPagas] = useState(faturasIniciais)
+  useEffect(() => { setFaturasPagas(faturasIniciais) }, [faturasIniciais])
   const [dizimos, setDizimos] = useState(dizimosIniciais)
   useEffect(() => { setDizimos(dizimosIniciais) }, [dizimosIniciais])
-  const [dizimoAberto, setDizimoAberto] = useState<Saida | null>(null)
-  const [filtro, setFiltro] = useState<string>(cartaoInicial ?? 'todos') // 'todos' | 'fora' | id do cartão
-  const [sheet, setSheet] = useState<'novo' | 'fatura' | 'tetos' | 'fixos' | 'conta' | null>(null)
-  const [atalho, setAtalho] = useState<Atalho | null>(null) // conta fixa nova a partir de um atalho
-  const [pagando, setPagando] = useState<Despesa | null>(null) // conta fixa prevista sendo paga
-  const [editando, setEditando] = useState<Lancamento | null>(null)
+  const [tetos, setTetos] = useState(tetosIniciais)
 
-  const refresh = () => startTransition(() => router.refresh())
+  const lancamentos = useMemo(() => brutos.map(l => espelharLancamento(l, despesas)), [brutos, despesas])
+  const atrasados = useMemo(() => atrasadosBrutos.map(l => espelharLancamento(l, despesas)), [atrasadosBrutos, despesas])
+  const faturaAnterior = useMemo(() => anteriorInicial.map(l => espelharLancamento(l, despesas)), [anteriorInicial, despesas])
+
+  const [ocupadas, setOcupadas] = useState<Set<string>>(new Set())
+  const [abertas, setAbertas] = useState<Set<string>>(new Set(cartaoInicial ? [`f-${cartaoInicial}`] : []))
+  const [verCategorias, setVerCategorias] = useState(false)
+  const [catAberta, setCatAberta] = useState<string | null>(null)
+  const [sheet, setSheet] = useState<'gasto' | 'fatura' | 'tetos' | 'nova' | null>(null)
+  const [editando, setEditando] = useState<Lancamento | null>(null)
+  const [contaAberta, setContaAberta] = useState<Conta | null>(null)
+  const [dizimoAberto, setDizimoAberto] = useState<Conta | null>(null)
+
+  const hoje = hojeISO()
+  const contas = montarContas({
+    mes: competencia, lancamentos, atrasados, cartoes, despesas, faturasPagas, faturaAnterior,
+    rendas, dizimos, dizimoDesde, verAtrasos,
+  })
+  const pausadas = despesas.filter(d => !d.ativo && !d.cartao_id && d.inicio)
+
+  // Os números do mês
+  const soma = (l: Conta[]) => l.reduce((a, c) => a + c.valor, 0)
+  const total = soma(contas)
+  const pago = soma(contas.filter(c => c.pago))
+  const vencido = soma(contas.filter(c => !c.pago && c.vencimento && c.vencimento < hoje))
+  const aPagar = total - pago
+  const rendaMes = rendaDoMes(rendas, competencia)
+  const sobra = rendaMes - total
+
+  // ── Ações da planilha
+
+  async function ocupar<T>(chave: string, fn: () => Promise<T>): Promise<T> {
+    setOcupadas(prev => new Set(prev).add(chave))
+    try { return await fn() } finally {
+      setOcupadas(prev => { const n = new Set(prev); n.delete(chave); return n })
+    }
+  }
+
+  const trocarLancamento = (l: Lancamento) => {
+    const t = (x: Lancamento) => (x.id === l.id ? l : x)
+    setLancamentos(prev => (prev.some(x => x.id === l.id) ? prev.map(t) : l.competencia === competencia ? [l, ...prev] : prev))
+    setAtrasados(prev => prev.map(t))
+  }
+
+  /** Conta do cadastro sem registro no mês: cria o registro (com valor e situação escolhidos). */
+  async function registrar(c: Conta, campos: { valor: number; pago: boolean }) {
+    const d = c.despesa!
+    const venc = c.vencimento ?? competencia
+    const { data, error } = await supabase.from('fin_lancamentos').insert({
+      familia_id: familiaId, user_id: userId, data: venc, vencimento: venc, competencia,
+      descricao: d.descricao, categoria: d.categoria, cartao_id: null, origem: 'fixo', despesa_id: d.id, ...campos,
+    }).select().single()
+    if (error || !data) return alert('Não foi possível salvar. Tente de novo.')
+    trocarLancamento(data as Lancamento)
+  }
+
+  async function alternar(c: Conta) {
+    if (c.tipo === 'conta') {
+      if (!c.lancamento) return ocupar(c.chave, () => registrar(c, { valor: c.valor, pago: true }))
+      const l = c.lancamento
+      trocarLancamento({ ...l, pago: !l.pago }) // otimista
+      const { error } = await supabase.from('fin_lancamentos').update({ pago: !l.pago }).eq('id', l.id)
+      if (error) { trocarLancamento(l); alert('Não foi possível atualizar. Tente de novo.') }
+    } else if (c.tipo === 'fatura' && c.cartao && c.competenciaFatura) {
+      const cartaoId = c.cartao.id, comp = c.competenciaFatura
+      const antes = faturasPagas
+      setFaturasPagas(prev => c.pago
+        ? prev.filter(f => !(f.cartao_id === cartaoId && f.competencia.slice(0, 10) === comp))
+        : [...prev, { cartao_id: cartaoId, competencia: comp }])
+      const { error } = c.pago
+        ? await supabase.from('fin_faturas').delete().eq('cartao_id', cartaoId).eq('competencia', comp)
+        : await supabase.from('fin_faturas').insert({ familia_id: familiaId, cartao_id: cartaoId, competencia: comp })
+      if (error) { setFaturasPagas(antes); alert('Não foi possível atualizar. Tente de novo.') }
+    } else if (c.tipo === 'dizimo' && c.competenciaDizimo) {
+      const comp = c.competenciaDizimo
+      const registro = { competencia: comp, valor: c.valor, devolvido_em: hoje }
+      const antes = dizimos
+      aoDevolver(comp, c.pago ? null : registro)
+      const { error } = c.pago
+        ? await supabase.from('fin_dizimos').delete().eq('familia_id', familiaId).eq('competencia', comp)
+        : await supabase.from('fin_dizimos').upsert({ familia_id: familiaId, ...registro })
+      if (error) { setDizimos(antes); alert('Não foi possível atualizar. Tente de novo.') }
+    }
+  }
+
+  async function mudarValor(c: Conta, valor: number) {
+    if (!c.lancamento) return ocupar(c.chave, () => registrar(c, { valor, pago: false }))
+    const l = c.lancamento
+    trocarLancamento({ ...l, valor })
+    const { error } = await supabase.from('fin_lancamentos').update({ valor }).eq('id', l.id)
+    if (error) { trocarLancamento(l); alert('Não foi possível salvar o valor. Tente de novo.') }
+  }
+
+  function aoDevolver(comp: string, d: DizimoDevolvido | null) {
+    setDizimos(prev => [...prev.filter(x => x.competencia.slice(0, 10) !== comp), ...(d ? [d] : [])])
+    setDizimoAberto(null)
+  }
+
+  async function retomar(d: Despesa) {
+    const { error } = await supabase.from('fin_despesas').update({ ativo: true, updated_at: new Date().toISOString() }).eq('id', d.id)
+    if (error) return alert('Não foi possível retomar. Tente de novo.')
+    refresh()
+  }
+
+  function abrir(c: Conta) {
+    if (c.tipo === 'dizimo') setDizimoAberto(c)
+    else if (c.tipo === 'conta') setContaAberta(c)
+  }
+
+  function alternarFatura(chave: string) {
+    setAbertas(prev => {
+      const n = new Set(prev)
+      if (n.has(chave)) n.delete(chave)
+      else n.add(chave)
+      return n
+    })
+  }
+
+  // ── Gastos por categoria (o que foi consumido no mês, inclusive no cartão)
 
   const gasto = lancamentos.reduce((a, l) => a + Number(l.valor), 0)
   const naoEssencial = lancamentos.filter(l => !lancamentoEssencial(l)).reduce((a, l) => a + Number(l.valor), 0)
-  const totalTetos = Object.values(tetos).reduce((a, v) => a + Number(v), 0)
-  const planejado = totalTetos > 0 ? totalTetos : despesas.reduce((a, d) => a + despesaMensal(d), 0)
-  const restante = planejado - gasto
-  const pct = planejado > 0 ? Math.min((gasto / planejado) * 100, 100) : 0
-
-  // Fixos do orçamento que ainda não viraram lançamento neste mês
-  const lancadosIds = new Set(lancamentos.map(l => l.despesa_id).filter(Boolean))
-  const fixosPendentes = despesas.filter(d =>
-    d.ativo && !lancadosIds.has(d.id) &&
-    (d.frequencia === 'mensal' || (d.frequencia === 'parcelada' && (parcelasRestantes(d, new Date(`${competencia}T12:00:00`)) ?? 1) > 0))
-  )
-
-  // O que sai da conta neste mês, pela data em que sai
-  const saidas = montarSaidas({
-    mes: competencia, lancamentos, atrasados, cartoes, faturasPagas, faturaAnterior, fixosPendentes,
-    rendas, dizimos, dizimoDesde, verAtrasos,
-  })
-  const hoje = hojeISO()
-  const faltaSair = saidas.filter(s => !s.pago).reduce((a, s) => a + s.valor, 0)
-  const vencidas = saidas.filter(s => !s.pago && s.data && s.data < hoje).length
-  const contasAbertas = saidas.filter(s => !s.pago).length
-  const atalhos = atalhosPendentes(despesas)
-
   const porCategoria = Object.keys(CATEGORIAS_DESPESA)
     .map(cat => {
       const itens = lancamentos.filter(l => l.categoria === cat)
@@ -111,341 +195,161 @@ export default function MesClient({
     .filter(g => g.itens.length > 0 || g.teto > 0)
     .sort((a, b) => b.total - a.total || b.teto - a.teto)
 
-  const nomeCartao = (id: string | null) => cartoes.find(c => c.id === id)?.nome
-  const porCartao = cartoes
-    .map(c => ({ cartao: c, total: lancamentos.filter(l => l.cartao_id === c.id).reduce((a, l) => a + Number(l.valor), 0) }))
-    .filter(x => x.total !== 0)
-  const foraDoCartao = lancamentos.filter(l => !l.cartao_id).reduce((a, l) => a + Number(l.valor), 0)
-  const filtrados = lancamentos.filter(l => filtro === 'todos' || (filtro === 'fora' ? !l.cartao_id : l.cartao_id === filtro))
-  const chipFiltro = (ativo: boolean) =>
-    `flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
-      ativo ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-card hover:bg-secondary'
-    }`
-  const filtrar = (f: string) => { setFiltro(f); setVisao('lista') }
-
-  function aoSalvar(l: Lancamento) {
-    setAtrasados(prev => prev.map(x => x.id === l.id ? l : x).filter(x => !x.pago && !x.cartao_id && x.competencia < competencia))
-    setLancamentos(prev => {
-      const existe = prev.some(x => x.id === l.id)
-      const lista = existe ? prev.map(x => x.id === l.id ? l : x) : [l, ...prev]
-      return lista.filter(x => x.competencia === competencia) // foi para outro mês (fatura seguinte)
-    })
-    setEditando(null) // edição fecha; lançamento novo deixa a janela aberta para o próximo
-    refresh()
-  }
-
-  async function marcar(s: Saida, fn: () => Promise<{ error: unknown }>) {
-    setOcupadas(prev => new Set(prev).add(s.chave))
-    const { error } = await fn()
-    setOcupadas(prev => { const n = new Set(prev); n.delete(s.chave); return n })
-    if (error) alert('Não foi possível atualizar. Tente de novo.')
-    return !error
-  }
-
-  // Círculo da lista de saídas: paga ou volta para pendente
-  async function alternar(s: Saida) {
-    if (s.tipo === 'conta' && s.lancamento) {
-      const l = s.lancamento
-      const ok = await marcar(s, async () => await supabase.from('fin_lancamentos').update({ pago: !l.pago }).eq('id', l.id))
-      if (!ok) return
-      const trocar = (x: Lancamento) => x.id === l.id ? { ...x, pago: !l.pago } : x
-      setLancamentos(prev => prev.map(trocar))
-      setAtrasados(prev => prev.map(trocar))
-    } else if (s.tipo === 'fatura' && s.cartao && s.competenciaFatura) {
-      const cartaoId = s.cartao.id, comp = s.competenciaFatura
-      const ok = await marcar(s, async () => s.pago
-        ? await supabase.from('fin_faturas').delete().eq('cartao_id', cartaoId).eq('competencia', comp)
-        : await supabase.from('fin_faturas').insert({ familia_id: familiaId, cartao_id: cartaoId, competencia: comp }))
-      if (!ok) return
-      setFaturasPagas(prev => s.pago
-        ? prev.filter(f => !(f.cartao_id === cartaoId && f.competencia.slice(0, 10) === comp))
-        : [...prev, { cartao_id: cartaoId, competencia: comp }])
-    } else if (s.tipo === 'dizimo' && s.competenciaDizimo) {
-      const comp = s.competenciaDizimo
-      const registro = { competencia: comp, valor: s.valor, devolvido_em: hoje }
-      const ok = await marcar(s, async () => s.pago
-        ? await supabase.from('fin_dizimos').delete().eq('familia_id', familiaId).eq('competencia', comp)
-        : await supabase.from('fin_dizimos').upsert({ familia_id: familiaId, ...registro }))
-      if (ok) aoDevolver(comp, s.pago ? null : registro)
-    } else if (s.tipo === 'previsto' && s.despesa) {
-      // Fixo do orçamento pago: vira lançamento do mês, já marcado como pago
-      const d = s.despesa
-      const data = s.data ?? (hoje.slice(0, 7) === competencia.slice(0, 7) ? hoje : competencia)
-      let salvo: Lancamento | null = null
-      const ok = await marcar(s, async () => {
-        const r = await supabase.from('fin_lancamentos').insert({
-          familia_id: familiaId, user_id: userId, data, vencimento: data, competencia, pago: true,
-          descricao: d.descricao, valor: d.valor, categoria: d.categoria, cartao_id: null, origem: 'fixo', despesa_id: d.id,
-        }).select().single()
-        salvo = r.data as Lancamento | null
-        return r
-      })
-      if (!ok || !salvo) return
-      const novo: Lancamento = salvo
-      setLancamentos(prev => [novo, ...prev])
-    }
-    refresh()
-  }
-
-  function aoDevolver(competenciaDizimo: string, d: DizimoDevolvido | null) {
-    setDizimos(prev => [...prev.filter(x => x.competencia.slice(0, 10) !== competenciaDizimo), ...(d ? [d] : [])])
-    setDizimoAberto(null)
-  }
-
-  function abrir(s: Saida) {
-    if (s.tipo === 'dizimo') return setDizimoAberto(s)
-    if (s.lancamento) return setEditando(s.lancamento)
-    if (s.tipo === 'previsto' && s.despesa) return setPagando(s.despesa)
-    if (s.cartao && s.competenciaFatura) {
-      if (s.competenciaFatura === competencia) return filtrar(s.cartao.id)
-      router.push(`/financas/mes?mes=${s.competenciaFatura.slice(0, 7)}&cartao=${s.cartao.id}`)
-    }
-  }
-
-  function aoImportar(novos: Lancamento[]) {
-    setLancamentos(prev => [...novos.filter(l => l.competencia === competencia), ...prev])
-    setSheet(null)
+  function aoSalvarGasto(l: Lancamento) {
+    trocarLancamento(l)
+    setLancamentos(prev => prev.filter(x => x.competencia === competencia)) // foi para a fatura seguinte
+    setEditando(null)
     refresh()
   }
 
   return (
-    <div className="space-y-5 pb-20 lg:pb-0">
-      {/* Navegação entre meses */}
+    <div className="space-y-4 pb-24 lg:pb-8">
+      {/* Mês */}
       <div className="flex items-center justify-between">
-        <Link href={`/financas/mes?mes=${mesVizinho(competencia, -1)}`} className="p-2 -ml-2 text-muted-foreground hover:text-foreground" aria-label="Mês anterior">
+        <Link href={`/financas/mes?mes=${mesVizinho(competencia, -1)}`} className="-ml-2 p-2 text-muted-foreground hover:text-foreground" aria-label="Mês anterior">
           <ChevronLeft className="h-5 w-5" />
         </Link>
         <h2 className="font-semibold">{nomeMes(competencia)}</h2>
-        <Link href={`/financas/mes?mes=${mesVizinho(competencia, 1)}`} className="p-2 -mr-2 text-muted-foreground hover:text-foreground" aria-label="Próximo mês">
+        <Link href={`/financas/mes?mes=${mesVizinho(competencia, 1)}`} className="-mr-2 p-2 text-muted-foreground hover:text-foreground" aria-label="Próximo mês">
           <ChevronRight className="h-5 w-5" />
         </Link>
       </div>
 
-      {/* O número que importa */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+      {/* Os números: total, pago, a pagar e o que sobra */}
+      <div className="space-y-3 rounded-xl border border-border bg-card p-4">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <p className="text-xs text-muted-foreground">Gasto no mês</p>
-            <p className="text-3xl font-semibold tabular-nums">{formatBRL(gasto)}</p>
-            {naoEssencial > 0 && (
-              <p className="text-xs text-amber-700">{formatBRL(naoEssencial)} não essenciais ({gasto > 0 ? Math.round((naoEssencial / gasto) * 100) : 0}%)</p>
+            <p className="text-xs text-muted-foreground">Contas do mês</p>
+            <p className="text-3xl font-semibold tabular-nums">{formatBRL(total)}</p>
+          </div>
+          {rendaMes > 0 && (
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">{sobra >= 0 ? 'Sobra da renda' : 'Falta na renda'}</p>
+              <p className={`text-lg font-semibold tabular-nums ${sobra >= 0 ? 'text-green-700' : 'text-red-600'}`}>{formatBRL(Math.abs(sobra))}</p>
+              <p className="text-[11px] text-muted-foreground">renda {formatBRL(rendaMes)}</p>
+            </div>
+          )}
+        </div>
+        <div className="flex h-2.5 overflow-hidden rounded-full bg-red-100">
+          <div className="h-full bg-green-600 transition-all" style={{ width: `${total > 0 ? (pago / total) * 100 : 0}%` }} />
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div>
+            <p className="text-[11px] text-muted-foreground">Pago</p>
+            <p className="text-sm font-semibold tabular-nums text-green-700">{formatBRL(pago)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-muted-foreground">A pagar</p>
+            <p className="text-sm font-semibold tabular-nums text-red-600">{formatBRL(aPagar)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-muted-foreground">Vencido</p>
+            <p className={`text-sm font-semibold tabular-nums ${vencido > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{formatBRL(vencido)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* A planilha */}
+      <ContasLista
+        contas={contas}
+        hoje={hoje}
+        ocupadas={ocupadas}
+        abertas={abertas}
+        pausadas={pausadas}
+        onAlternar={alternar}
+        onValor={mudarValor}
+        onAbrir={abrir}
+        onExpandir={alternarFatura}
+        onLinha={l => setEditando(l)}
+        onRetomar={retomar}
+        onNova={() => setSheet('nova')}
+      />
+      <p className="px-1 text-xs text-muted-foreground">
+        Toque no círculo para marcar como pago. Toque no valor para mudar. Toque no nome para vencimento e outros detalhes.
+      </p>
+
+      {/* Gastos por categoria: recolhido, para quem quer olhar onde o dinheiro foi */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <button
+          type="button"
+          onClick={() => setVerCategorias(v => !v)}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-secondary/40"
+        >
+          <span className="flex items-center gap-1.5 text-sm font-medium">
+            Para onde foi o dinheiro
+            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${verCategorias ? 'rotate-180' : ''}`} />
+          </span>
+          <span className="text-right">
+            <span className="block text-sm font-semibold tabular-nums">{formatBRL(gasto)}</span>
+            {naoEssencial > 0 && <span className="block text-[11px] text-amber-700">{formatBRL(naoEssencial)} não essenciais</span>}
+          </span>
+        </button>
+
+        {verCategorias && (
+          <div className="border-t border-border">
+            <div className="flex gap-2 px-4 py-3">
+              <button type="button" onClick={() => setSheet('fatura')} className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-secondary">
+                <FileUp className="h-3.5 w-3.5 text-primary" /> Importar fatura
+              </button>
+              <button type="button" onClick={() => setSheet('tetos')} className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-secondary">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-primary" /> Limites
+              </button>
+            </div>
+            {porCategoria.length === 0 ? (
+              <p className="px-4 pb-4 text-sm text-muted-foreground">Nada lançado ainda.</p>
+            ) : (
+              <ul className="divide-y divide-border border-t border-border">
+                {porCategoria.map(({ cat, itens, total: t, teto }) => {
+                  const p = teto > 0 ? (t / teto) * 100 : 0
+                  return (
+                    <li key={cat}>
+                      <button type="button" onClick={() => setCatAberta(catAberta === cat ? null : cat)} className="w-full space-y-1.5 px-4 py-2.5 text-left">
+                        <div className="flex items-center justify-between gap-2 text-sm">
+                          <span>{CATEGORIAS_DESPESA[cat].label}</span>
+                          <span className="tabular-nums">
+                            <strong className={p > 100 ? 'text-red-600' : ''}>{formatBRL(t)}</strong>
+                            {teto > 0 && <span className="text-xs text-muted-foreground"> / {formatBRL(teto)}</span>}
+                          </span>
+                        </div>
+                        {teto > 0 && (
+                          <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                            <div className={`h-full rounded-full ${p >= 100 ? 'bg-red-500' : p >= 80 ? 'bg-amber-500' : 'bg-green-600'}`} style={{ width: `${Math.min(p, 100)}%` }} />
+                          </div>
+                        )}
+                      </button>
+                      {catAberta === cat && (
+                        <ul className="max-h-72 divide-y divide-border overflow-y-auto bg-secondary/30">
+                          {itens.map(l => (
+                            <li key={l.id}>
+                              <button type="button" onClick={() => setEditando(l)} className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs hover:bg-secondary">
+                                <span className="min-w-0 flex-1 truncate">{l.descricao}</span>
+                                <span className="text-muted-foreground">{l.data.slice(8, 10)}/{l.data.slice(5, 7)}</span>
+                                <span className="w-24 text-right tabular-nums">{formatBRL(Number(l.valor))}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
             )}
           </div>
-          {planejado > 0 && (
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">{restante >= 0 ? 'Ainda pode gastar' : 'Passou do limite'}</p>
-              <p className={`text-lg font-semibold tabular-nums ${restante >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                {formatBRL(Math.abs(restante))}
-              </p>
-            </div>
-          )}
-        </div>
-        {planejado > 0 && (
-          <>
-            <div className="h-2.5 rounded-full bg-secondary overflow-hidden">
-              <div
-                className={`h-full rounded-full ${pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-green-600'}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              de {formatBRL(planejado)} {totalTetos > 0 ? 'nos limites do mês' : 'previstos no orçamento'}
-            </p>
-          </>
-        )}
-        {faltaSair > 0 && (
-          <button
-            type="button"
-            onClick={() => setVisao('saidas')}
-            className="flex w-full items-center justify-between gap-2 border-t border-border pt-3 text-left text-sm"
-          >
-            <span className="text-muted-foreground">
-              Falta sair da conta
-              {vencidas > 0 && <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{vencidas} {vencidas === 1 ? 'vencida' : 'vencidas'}</span>}
-            </span>
-            <span className="flex items-center gap-1 font-semibold tabular-nums">
-              {formatBRL(faltaSair)} <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </span>
-          </button>
         )}
       </div>
 
-      {(porCartao.length > 0 || foraDoCartao !== 0) && (
-        <div className="flex flex-wrap gap-2">
-          {porCartao.map(({ cartao, total }) => (
-            <button key={cartao.id} type="button" onClick={() => filtrar(cartao.id)} className={chipFiltro(visao === 'lista' && filtro === cartao.id)}>
-              <CreditCard className="h-3 w-3 text-primary" /> {cartao.nome}: <strong className="tabular-nums">{formatBRL(total)}</strong>
-            </button>
-          ))}
-          {foraDoCartao !== 0 && (
-            <button type="button" onClick={() => filtrar('fora')} className={chipFiltro(visao === 'lista' && filtro === 'fora')}>
-              Pix / débito: <strong className="tabular-nums">{formatBRL(foraDoCartao)}</strong>
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Ações do mês */}
-      <div className="grid grid-cols-3 gap-2">
-        <button type="button" onClick={() => setSheet('fatura')} className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card px-2 py-3 text-xs hover:bg-secondary">
-          <FileUp className="h-5 w-5 text-primary" /> Importar fatura
-        </button>
-        <button type="button" onClick={() => setVisao('saidas')} className="relative flex flex-col items-center gap-1 rounded-lg border border-border bg-card px-2 py-3 text-xs hover:bg-secondary">
-          <ListChecks className="h-5 w-5 text-primary" /> Contas do mês
-          {contasAbertas > 0 && (
-            <span className={`absolute right-2 top-2 rounded-full px-1.5 text-[10px] font-medium text-white ${vencidas > 0 ? 'bg-red-500' : 'bg-primary'}`}>
-              {contasAbertas}
-            </span>
-          )}
-        </button>
-        <button type="button" onClick={() => setSheet('tetos')} className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card px-2 py-3 text-xs hover:bg-secondary">
-          <SlidersHorizontal className="h-5 w-5 text-primary" /> Limites
-        </button>
-      </div>
-
-      {/* Resumo por categoria ou todas as linhas */}
-      {(lancamentos.length > 0 || saidas.length > 0) && (
-        <div className="flex items-center justify-between gap-2">
-          <div className="inline-flex rounded-lg bg-secondary p-1">
-            {(['categorias', 'lista', 'saidas'] as const).map(v => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setVisao(v)}
-                className={`rounded-md px-3 py-1.5 text-sm ${visao === v ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`}
-              >
-                {v === 'categorias' ? 'Categorias' : v === 'lista' ? 'Linhas' : 'Contas'}
-              </button>
-            ))}
-          </div>
-          {visao === 'lista' && filtro !== 'todos' && (
-            <button type="button" onClick={() => setFiltro('todos')} className="text-xs text-primary">ver todos</button>
-          )}
-        </div>
-      )}
-
-      {visao === 'saidas' ? (
-        <SaidasLista
-          mes={competencia}
-          saidas={saidas}
-          ocupadas={ocupadas}
-          atalhos={atalhos}
-          onAlternar={alternar}
-          onAbrir={abrir}
-          onNovaConta={a => { setAtalho(a); setSheet('conta') }}
-          onLancarFixos={fixosPendentes.length > 0 ? () => setSheet('fixos') : undefined}
-        />
-      ) : visao === 'lista' ? (
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between gap-2 border-b border-border bg-secondary/40 px-4 py-2.5 text-sm">
-            <span>{filtrados.length} {filtrados.length === 1 ? 'lançamento' : 'lançamentos'}</span>
-            <strong className="tabular-nums">{formatBRL(filtrados.reduce((a, l) => a + Number(l.valor), 0))}</strong>
-          </div>
-          {filtrados.length === 0 ? (
-            <p className="p-6 text-center text-sm text-muted-foreground">Nenhum lançamento aqui neste mês.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {filtrados.map(l => (
-                <li key={l.id}>
-                  <button
-                    type="button"
-                    onClick={() => setEditando(l)}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-secondary/60 hover:bg-secondary/30"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">{l.descricao}</p>
-                      <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-                        {new Date(`${l.data}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-                        <span className={`rounded px-1.5 ${CATEGORIAS_DESPESA[l.categoria]?.className ?? ''}`}>
-                          {CATEGORIAS_DESPESA[l.categoria]?.label ?? l.categoria}
-                        </span>
-                        {filtro === 'todos' && l.cartao_id && <span>{nomeCartao(l.cartao_id)}</span>}
-                        {l.parcelas_total && <span>{l.parcela_atual}/{l.parcelas_total}</span>}
-                        {!l.cartao_id && !l.pago && <span className="rounded bg-amber-100 px-1.5 text-amber-800">a pagar · {formatDiaMes(dataPagamento(l))}</span>}
-                      </p>
-                    </div>
-                    <span className={`text-sm tabular-nums ${Number(l.valor) < 0 ? 'text-green-700' : ''}`}>{formatBRL(Number(l.valor))}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : porCategoria.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          Nada lançado em {nomeMes(competencia).toLowerCase()}. Toque no <strong>+</strong> a cada gasto, ou importe a fatura do cartão.
-        </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
-          {porCategoria.map(({ cat, itens, total, teto }) => {
-            const p = teto > 0 ? (total / teto) * 100 : 0
-            const expandida = aberta === cat
-            return (
-              <div key={cat}>
-                <button
-                  type="button"
-                  onClick={() => setAberta(expandida ? null : cat)}
-                  className="w-full px-4 py-3 text-left space-y-1.5 active:bg-secondary/60"
-                >
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="flex items-center gap-1.5">
-                      {CATEGORIAS_DESPESA[cat].label}
-                      {itens.length > 0 && <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${expandida ? 'rotate-180' : ''}`} />}
-                    </span>
-                    <span className="tabular-nums">
-                      <strong className={p > 100 ? 'text-red-600' : ''}>{formatBRL(total)}</strong>
-                      {teto > 0 && <span className="text-xs text-muted-foreground"> / {formatBRL(teto)}</span>}
-                    </span>
-                  </div>
-                  {teto > 0 && (
-                    <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${p >= 100 ? 'bg-red-500' : p >= 80 ? 'bg-amber-500' : 'bg-green-600'}`}
-                        style={{ width: `${Math.min(p, 100)}%` }}
-                      />
-                    </div>
-                  )}
-                </button>
-                {expandida && (
-                  <ul className="bg-secondary/30 divide-y divide-border">
-                    {itens.map(l => (
-                      <li key={l.id}>
-                        <button
-                          type="button"
-                          onClick={() => setEditando(l)}
-                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-secondary"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm">{l.descricao}</p>
-                            <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                              {new Date(`${l.data}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-                              {l.cartao_id && <><CreditCard className="ml-1 h-3 w-3" /> {nomeCartao(l.cartao_id)}</>}
-                              {l.parcelas_total && ` · ${l.parcela_atual}/${l.parcelas_total}`}
-                              {!l.cartao_id && !l.pago && <span className="ml-1 rounded bg-amber-100 px-1.5 text-amber-800">a pagar · {formatDiaMes(dataPagamento(l))}</span>}
-                            </p>
-                          </div>
-                          <span className={`text-sm tabular-nums ${Number(l.valor) < 0 ? 'text-green-700' : ''}`}>{formatBRL(Number(l.valor))}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
+      {/* Gasto do dia a dia */}
       <button
         type="button"
-        onClick={() => setSheet('novo')}
+        onClick={() => setSheet('gasto')}
         aria-label="Lançar gasto"
-        className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-8 lg:right-8 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95"
+        className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 lg:bottom-8 lg:right-8"
       >
         <Plus className="h-6 w-6" />
       </button>
 
-      {(sheet === 'novo' || editando) && (
+      {(sheet === 'gasto' || editando) && (
         <LancamentoSheet
           familiaId={familiaId}
           userId={userId}
@@ -453,7 +357,7 @@ export default function MesClient({
           planoPrincipal={plano}
           rendaMensal={renda}
           lancamento={editando}
-          onSaved={aoSalvar}
+          onSaved={aoSalvarGasto}
           onDeleted={id => {
             setLancamentos(prev => prev.filter(l => l.id !== id))
             setAtrasados(prev => prev.filter(l => l.id !== id))
@@ -463,6 +367,37 @@ export default function MesClient({
           onClose={() => { setSheet(null); setEditando(null) }}
         />
       )}
+      {sheet === 'nova' && (
+        <NovaContaSheet
+          familiaId={familiaId}
+          userId={userId}
+          onSaved={mes => {
+            setSheet(null)
+            if (mes === competencia) refresh()
+            else router.push(`/financas/mes?mes=${mes.slice(0, 7)}`)
+          }}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {contaAberta && (
+        <ContaSheet
+          familiaId={familiaId}
+          userId={userId}
+          competencia={contaAberta.lancamento?.competencia ?? competencia}
+          conta={contaAberta}
+          onSaved={l => { trocarLancamento(l); setContaAberta(null) }}
+          onDeleted={id => {
+            setLancamentos(prev => prev.filter(l => l.id !== id))
+            setAtrasados(prev => prev.filter(l => l.id !== id))
+            setContaAberta(null)
+          }}
+          onCadastroAlterado={refresh}
+          onClose={() => setContaAberta(null)}
+        />
+      )}
+      {dizimoAberto && (
+        <DizimoSheet familiaId={familiaId} saida={dizimoAberto} onSaved={aoDevolver} onClose={() => setDizimoAberto(null)} />
+      )}
       {sheet === 'fatura' && (
         <ImportarFatura
           familiaId={familiaId}
@@ -471,7 +406,11 @@ export default function MesClient({
           competencia={competencia}
           plano={plano}
           renda={renda}
-          onImported={aoImportar}
+          onImported={novos => {
+            setLancamentos(prev => [...novos.filter(l => l.competencia === competencia), ...prev])
+            setSheet(null)
+            refresh()
+          }}
           onClose={() => setSheet(null)}
         />
       )}
@@ -481,40 +420,6 @@ export default function MesClient({
           tetos={tetos}
           despesas={despesas}
           onSaved={t => { setTetos(t); setSheet(null); refresh() }}
-          onClose={() => setSheet(null)}
-        />
-      )}
-      {sheet === 'conta' && (
-        <ContaFixaSheet
-          familiaId={familiaId}
-          userId={userId}
-          atalho={atalho}
-          pendentes={atalhos}
-          onSaved={() => { setSheet(null); setAtalho(null); setVisao('saidas'); refresh() }}
-          onClose={() => { setSheet(null); setAtalho(null) }}
-        />
-      )}
-      {dizimoAberto && (
-        <DizimoSheet familiaId={familiaId} saida={dizimoAberto} onSaved={aoDevolver} onClose={() => setDizimoAberto(null)} />
-      )}
-      {pagando && (
-        <PagarContaSheet
-          familiaId={familiaId}
-          userId={userId}
-          competencia={competencia}
-          despesa={pagando}
-          onSaved={l => { if (l) setLancamentos(prev => [l, ...prev]); setPagando(null); refresh() }}
-          onClose={() => setPagando(null)}
-        />
-      )}
-      {sheet === 'fixos' && (
-        <FixosSheet
-          familiaId={familiaId}
-          userId={userId}
-          competencia={competencia}
-          pendentes={fixosPendentes}
-          cartoes={cartoes}
-          onSaved={aoImportar}
           onClose={() => setSheet(null)}
         />
       )}

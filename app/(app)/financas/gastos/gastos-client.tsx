@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, CreditCard, Pencil, Plus, Receipt, Settings2, Trash2, Wallet } from 'lucide-react'
+import { CheckCircle2, ChevronDown, CreditCard, Pencil, Plus, Receipt, Settings2, Trash2, Wallet } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   CATEGORIAS_DESPESA, FREQUENCIA_DESPESA_LABEL, competenciaISO, despesaMensal, espelharLancamento, lancamentoEssencial, parcelaNoMes, fimParcelas, formatBRL, formatMesAno,
@@ -108,6 +108,21 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
   // Fatura real do mês, por cartão, com edição completa de cada linha
   const [lancMes, setLancMes] = useState(lancamentosMes)
   const [abaCartao, setAbaCartao] = useState<Record<string, 'fatura' | 'fixos'>>({})
+  // Blocos (cada cartão e "fora do cartão") começam recolhidos: só o cabeçalho com o total
+  const [abertos, setAbertos] = useState<Set<string>>(new Set())
+  const alternarBloco = (id: string) => setAbertos(prev => {
+    const novo = new Set(prev)
+    if (novo.has(id)) novo.delete(id)
+    else novo.add(id)
+    return novo
+  })
+  const cabecalhoBloco = (id: string) => ({
+    role: 'button' as const,
+    tabIndex: 0,
+    'aria-expanded': abertos.has(id),
+    onClick: () => alternarBloco(id),
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alternarBloco(id) } },
+  })
   const [lancSheet, setLancSheet] = useState<{ lancamento: Lancamento | null; cartaoId: string } | null>(null)
   // Lançar um parcelado ou "todo mês" cria item no orçamento: acompanha os dados novos do servidor
   useEffect(() => { setDespesas(initialDespesas) }, [initialDespesas])
@@ -421,15 +436,20 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
 
             return (
               <div key={c.id} className="rounded-lg border border-border bg-card overflow-hidden">
-                <div className="px-4 py-3 bg-secondary/50 border-b border-border space-y-2">
+                <div {...cabecalhoBloco(c.id)} className={`cursor-pointer px-4 py-3 bg-secondary/50 space-y-2 hover:bg-secondary/70 ${abertos.has(c.id) ? 'border-b border-border' : ''}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <CreditCard className="w-4 h-4 text-primary flex-shrink-0" />
-                      <span className="font-medium truncate">{c.nome}</span>
-                      {c.dia_vencimento && <span className="text-xs text-muted-foreground whitespace-nowrap">vence dia {c.dia_vencimento}</span>}
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-primary flex-shrink-0" />
+                        <span className="font-medium truncate">{c.nome}</span>
+                        <ChevronDown className={`h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform ${abertos.has(c.id) ? 'rotate-180' : ''}`} />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {c.dia_vencimento ? `vence dia ${c.dia_vencimento} · ` : ''}{itens.length} {itens.length === 1 ? 'fixo ou parcela' : 'fixos e parcelas'}
+                      </p>
                     </div>
                     {realPorCartao[c.id] ? (
-                      <Link href={`/financas/mes?cartao=${c.id}`} className="text-right hover:text-primary">
+                      <Link href={`/financas/mes?cartao=${c.id}`} onClick={e => e.stopPropagation()} className="text-right hover:text-primary">
                         <p className="text-xs text-muted-foreground">Lançado no mês ›</p>
                         <p className="font-semibold tabular-nums">{formatBRL(realPorCartao[c.id])}</p>
                         <p className="text-[11px] text-muted-foreground">previsto: {formatBRL(fatura)}</p>
@@ -460,7 +480,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                     </div>
                   )}
                 </div>
-                {(() => {
+                {abertos.has(c.id) && (() => {
                   const linhas = lancMes.filter(l => l.cartao_id === c.id).map(l => espelharLancamento(l, despesas))
                   const aba = abaCartao[c.id] ?? (linhas.length > 0 ? 'fatura' : 'fixos')
                   return (
@@ -480,7 +500,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
 
                       {aba === 'fatura' ? (
                         linhas.length > 0 ? (
-                          <ul className="divide-y divide-border">
+                          <ul className="max-h-80 divide-y divide-border overflow-y-auto overscroll-contain">
                             {linhas.map(l => (
                               <li key={l.id}>
                                 <button
@@ -519,7 +539,7 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                           <p className="px-4 py-5 text-center text-sm text-muted-foreground">Nada lançado neste cartão este mês.</p>
                         )
                       ) : itens.length > 0 ? (
-                        <ul className="divide-y divide-border">
+                        <ul className="max-h-80 divide-y divide-border overflow-y-auto overscroll-contain">
                           {itens.map(d => linhaDespesa(d, true))}
                         </ul>
                       ) : (
@@ -543,14 +563,19 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
           {/* Fora do cartão, agrupado por categoria */}
           {foraDoCartao.length > 0 && (
             <div className="rounded-lg border border-border bg-card overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-4 py-3 bg-secondary/50 border-b border-border">
-                <div className="flex items-center gap-2">
-                  <Wallet className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-medium">Fora do cartão</span>
-                  <span className="text-xs text-muted-foreground">boleto, débito, Pix</span>
+              <div {...cabecalhoBloco('fora')} className={`flex cursor-pointer items-center justify-between gap-3 px-4 py-3 bg-secondary/50 hover:bg-secondary/70 ${abertos.has('fora') ? 'border-b border-border' : ''}`}>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-muted-foreground" />
+                    <span className="font-medium">Fora do cartão</span>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${abertos.has('fora') ? 'rotate-180' : ''}`} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">boleto, débito, Pix · {foraDoCartao.length} {foraDoCartao.length === 1 ? 'conta' : 'contas'}</p>
                 </div>
                 <span className="font-semibold tabular-nums">{formatBRL(totalFora)}</span>
               </div>
+              {abertos.has('fora') && (
+              <div className="max-h-96 overflow-y-auto overscroll-contain">
               {gruposFora.map(({ cat, itens }) => (
                 <div key={cat}>
                   <div className="flex items-center justify-between px-4 pt-3 pb-1">
@@ -566,6 +591,8 @@ export default function GastosClient({ userId, familiaId, despesas: initialDespe
                   </ul>
                 </div>
               ))}
+              </div>
+              )}
             </div>
           )}
         </div>
