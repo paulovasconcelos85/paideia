@@ -3,13 +3,16 @@
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronLeft, ChevronRight, FileUp, Plus, SlidersHorizontal } from 'lucide-react'
+import {
+  ChevronDown, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, FileUp, Loader2, MessageCircle, Plus, SlidersHorizontal,
+} from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   CATEGORIAS_DESPESA, espelharLancamento, formatBRL, hojeISO, lancamentoEssencial, nomeMes, rendaDoMes,
   type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Receita, type Renda,
 } from '@/lib/financas'
 import { montarContas, type Conta } from '@/lib/contas'
+import { abrirWhatsApp, compartilharArquivo, gerarExcel, gerarPdf, type MesParaExportar } from '@/lib/exportar-mes'
 import LancamentoSheet from '../_components/lancamento-sheet'
 import ContasLista from './contas-lista'
 import ContaSheet from './conta-sheet'
@@ -166,6 +169,28 @@ export default function MesClient({
     if (error) { trocarLancamento(l); alert('Não foi possível salvar o valor. Tente de novo.') }
   }
 
+  // ── Mandar o mês: WhatsApp, Excel, PDF
+
+  const [gerando, setGerando] = useState<'xlsx' | 'pdf' | null>(null)
+
+  const paraExportar = (): MesParaExportar => ({
+    competencia, hoje, contas, total, pago, aPagar, vencido, renda: rendaMes, rendaRecebida,
+    entradas: entradas.map(e => ({ descricao: e.descricao, data: e.data, valor: e.valor, recebida: e.recebida, saldo: e.tipo === 'saldo' })),
+  })
+
+  async function exportar(ext: 'xlsx' | 'pdf') {
+    setGerando(ext)
+    try {
+      const m = paraExportar()
+      const blob = ext === 'xlsx' ? await gerarExcel(m) : await gerarPdf(m)
+      await compartilharArquivo(blob, m, ext)
+    } catch {
+      alert('Não foi possível gerar o arquivo. Tente de novo.')
+    } finally {
+      setGerando(null)
+    }
+  }
+
   // ── Entradas: o salário previsto vira registro quando cai
 
   const trocarReceita = (r: Receita) => setReceitas(prev => (prev.some(x => x.id === r.id) ? prev.map(x => (x.id === r.id ? r : x)) : [...prev, r]))
@@ -284,6 +309,19 @@ export default function MesClient({
             <p className={`text-sm font-semibold tabular-nums ${vencido > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{formatBRL(vencido)}</p>
           </div>
         </div>
+      </div>
+
+      {/* Mandar o mês adiante */}
+      <div className="grid grid-cols-3 gap-2">
+        <button type="button" onClick={() => abrirWhatsApp(paraExportar())} className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-2 text-xs font-medium hover:bg-secondary">
+          <MessageCircle className="h-4 w-4 text-green-600" /> WhatsApp
+        </button>
+        <button type="button" onClick={() => exportar('xlsx')} disabled={!!gerando} className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-2 text-xs font-medium hover:bg-secondary disabled:opacity-50">
+          {gerando === 'xlsx' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 text-emerald-700" />} Excel
+        </button>
+        <button type="button" onClick={() => exportar('pdf')} disabled={!!gerando} className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card py-2 text-xs font-medium hover:bg-secondary disabled:opacity-50">
+          {gerando === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-red-600" />} PDF
+        </button>
       </div>
 
       {/* O que entra para pagar o mês */}
