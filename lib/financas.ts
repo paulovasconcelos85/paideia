@@ -365,6 +365,8 @@ export interface Divida {
   saldo: number
   juros_mensal: number
   parcela: number
+  amortizacao?: 'price' | 'sac' // SAC: amortização fixa, parcela caindo (financiamento imobiliário)
+  prazo_meses?: number | null   // meses que faltam (SAC)
   updated_at: string
 }
 

@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, TrendingDown, TrendingUp } from 'lucide-react'
+import { CreditCard, Plus, TrendingDown, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   TIPOS_CONTA, TIPOS_DIVIDA, formatBRL, formatMesAno, parseBRL,
@@ -10,7 +11,7 @@ import {
 } from '@/lib/financas'
 import { simularQuitacao } from '@/lib/dividas'
 import type { Ptax } from '@/lib/cambio'
-import type { CompraDolar } from '@/lib/patrimonio'
+import type { CompraDolar, DividaSemSaldo, ParcelaDevida } from '@/lib/patrimonio'
 import DolarSecao from './dolar-secao'
 import Sheet from '../_components/sheet'
 
@@ -19,6 +20,8 @@ interface Props {
   userId: string
   contas: Conta[]
   dividas: Divida[]
+  parcelas: ParcelaDevida[] // do Orçamento: o que falta das compras parceladas
+  semSaldo: DividaSemSaldo[] // financiamentos sem saldo devedor informado
   compras: CompraDolar[]
   ptax: Ptax | null
   historico: Fechamento[]
@@ -37,7 +40,7 @@ function atualizadoHa(iso: string) {
   return dias <= 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`
 }
 
-export default function PatrimonioClient({ familiaId, userId, contas: contasIniciais, dividas: dividasIniciais, compras: comprasIniciais, ptax, historico, sobraMensal }: Props) {
+export default function PatrimonioClient({ familiaId, userId, contas: contasIniciais, dividas: dividasIniciais, parcelas, semSaldo, compras: comprasIniciais, ptax, historico, sobraMensal }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -56,7 +59,9 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
   const pagoDolar = compras.reduce((a, c) => a + Number(c.valor_brl), 0)
   const dolarBRL = ptax ? usd * ptax.venda : pagoDolar
   const ativos = contas.reduce((a, c) => a + Number(c.saldo), 0) + dolarBRL
-  const passivos = dividas.reduce((a, d) => a + Number(d.saldo), 0)
+  const totalParcelas = parcelas.reduce((a, p) => a + p.total, 0)
+  const passivos = dividas.reduce((a, d) => a + Number(d.saldo), 0) + totalParcelas
+  const [saldoDevedor, setSaldoDevedor] = useState<Record<string, string>>({})
   const liquido = ativos - passivos
   const anterior = historico.length >= 2 ? historico[historico.length - 2] : null
   const variacao = anterior ? liquido - (Number(anterior.ativos) - Number(anterior.dividas)) : null
@@ -107,6 +112,18 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
       setDividas(prev => edicao.item ? prev.map(d => d.id === salvo.id ? salvo : d) : [...prev, salvo])
     }
     setEdicao(null)
+    startTransition(() => router.refresh())
+  }
+
+  /** Financiamento sem saldo: vira dívida com o saldo devedor informado e a parcela do Orçamento. */
+  async function informarSaldo(s: DividaSemSaldo) {
+    const saldo = parseBRL(saldoDevedor[s.id] ?? '')
+    if (!saldo) return
+    const { data, error } = await supabase.from('fin_dividas').insert({
+      familia_id: familiaId, user_id: userId, nome: s.descricao, tipo: 'financiamento', saldo, juros_mensal: 0, parcela: s.valor,
+    }).select().single()
+    if (error || !data) return alert('Não foi possível salvar. Tente de novo.')
+    setDividas(prev => [...prev, data as Divida])
     startTransition(() => router.refresh())
   }
 
@@ -207,11 +224,61 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
             <Plus className="h-4 w-4" /> Adicionar
           </button>
         </div>
-        {dividas.length === 0 ? (
+        {/* Financiamento é conta fixa no Orçamento, mas o que se deve é o saldo no banco */}
+        {semSaldo.filter(s => !dividas.some(d => d.nome === s.descricao)).map(s => (
+          <div key={s.id} className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-gray-900">
+            <p>
+              <strong>{s.descricao}</strong> ({formatBRL(s.valor)}/mês) está no Orçamento sem fim.
+              Quanto ainda falta pagar ao banco? (está no extrato do financiamento)
+            </p>
+            <div className="flex gap-2">
+              <input
+                inputMode="decimal"
+                value={saldoDevedor[s.id] ?? ''}
+                onChange={e => setSaldoDevedor(p => ({ ...p, [s.id]: e.target.value }))}
+                placeholder="Saldo devedor, ex.: 350.000,00"
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm"
+              />
+              <button type="button" onClick={() => informarSaldo(s)} className="rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">
+                Salvar
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {parcelas.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border bg-secondary/40 px-4 py-2 text-xs font-medium">
+              <span>Parcelas que faltam · do Orçamento</span>
+              <span className="tabular-nums text-red-600">{formatBRL(totalParcelas)}</span>
+            </div>
+            <ul className="max-h-80 divide-y divide-border overflow-y-auto">
+              {parcelas.map(p => (
+                <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5 truncate text-sm">
+                      {p.noCartao && <CreditCard className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
+                      {p.descricao}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {p.restantes} × {formatBRL(p.parcela)}{p.fim ? ` · até ${formatMesAno(new Date(`${p.fim}T12:00:00`))}` : ''}
+                    </p>
+                  </div>
+                  <span className="text-sm font-medium tabular-nums text-red-600">{formatBRL(p.total)}</span>
+                </li>
+              ))}
+            </ul>
+            <Link href="/financas/gastos" className="block border-t border-border px-4 py-2 text-xs text-primary">
+              Entra sozinho a partir do Orçamento. Para mudar, edite lá →
+            </Link>
+          </div>
+        )}
+
+        {dividas.length === 0 && parcelas.length === 0 && semSaldo.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
             Saldo devedor total de cada dívida: cartão, cheque especial, empréstimos, financiamentos. Encarar o número é o primeiro passo.
           </p>
-        ) : (
+        ) : dividas.length === 0 ? null : (
           <ul className="divide-y divide-border rounded-xl border border-border bg-card">
             {dividas.map(d => (
               <li key={d.id}>
@@ -221,6 +288,7 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
                     <p className="text-xs text-muted-foreground">
                       {Number(d.juros_mensal) > 0 ? `${String(d.juros_mensal).replace('.', ',')}% ao mês` : 'sem juros informados'}
                       {Number(d.parcela) > 0 && ` · parcela ${formatBRL(Number(d.parcela))}`}
+                      {d.amortizacao === 'sac' && d.prazo_meses ? ` · SAC, ${d.prazo_meses} meses` : ''}
                     </p>
                   </div>
                   <span className="text-sm font-medium tabular-nums text-red-600">{formatBRL(Number(d.saldo))}</span>
@@ -232,7 +300,7 @@ export default function PatrimonioClient({ familiaId, userId, contas: contasInic
       </section>
 
       {/* Plano de quitação */}
-      {passivos > 0 && (
+      {dividas.some(d => Number(d.saldo) > 0) && (
         <section className="rounded-xl border border-border bg-card p-5 space-y-4">
           <div>
             <h2 className="text-sm font-medium">Como sair das dívidas</h2>

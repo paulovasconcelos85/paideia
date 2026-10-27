@@ -1,9 +1,9 @@
 import { createClient, getUser } from '@/lib/supabase/server'
 import { historicoPatrimonio, obterFamilia } from '@/lib/familia'
 import { buscarPtax } from '@/lib/cambio'
-import type { Despesa, Fechamento, Renda } from '@/lib/financas'
-import { diagnosticar } from '@/lib/financas-diagnostico'
+import type { Fechamento } from '@/lib/financas'
 import { carregarPatrimonio } from '@/lib/patrimonio'
+import { sobraDoMes } from '@/lib/sobra'
 import PatrimonioClient from './patrimonio-client'
 
 export default async function PatrimonioPage() {
@@ -11,18 +11,15 @@ export default async function PatrimonioPage() {
   const [user, familiaId] = await Promise.all([getUser(), obterFamilia(supabase)])
 
   const ptaxPromise = buscarPtax()
-  const [ptax, patrimonio, { data: despesas }, { data: rendas }] = await Promise.all([
+  const [ptax, patrimonio, sobra] = await Promise.all([
     ptaxPromise,
     carregarPatrimonio(supabase, familiaId, ptaxPromise.then(p => p?.venda ?? null)),
-    supabase.from('fin_despesas').select('*').eq('familia_id', familiaId),
-    supabase.from('fin_rendas').select('*').eq('familia_id', familiaId),
+    sobraDoMes(supabase, familiaId),
   ])
 
   const historico: Fechamento[] = patrimonio.temDados
     ? await historicoPatrimonio(supabase, familiaId, patrimonio.ativos, patrimonio.passivos)
     : []
-
-  const { saldo } = diagnosticar((despesas ?? []) as Despesa[], (rendas ?? []) as Renda[])
 
   return (
     <PatrimonioClient
@@ -30,10 +27,12 @@ export default async function PatrimonioPage() {
       userId={user!.id}
       contas={patrimonio.contas}
       dividas={patrimonio.dividas}
+      parcelas={patrimonio.parcelas}
+      semSaldo={patrimonio.semSaldo}
       compras={patrimonio.compras}
       ptax={ptax}
       historico={historico}
-      sobraMensal={Math.max(saldo, 0)}
+      sobraMensal={Math.max(sobra.sobra, 0)}
     />
   )
 }

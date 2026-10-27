@@ -28,21 +28,24 @@ export function simularQuitacao(dividas: Divida[], extraMensal: number, estrateg
   if (ordem.length === 0) return { ordem, meses: 0, jurosTotal: 0, dataLivre: hoje }
 
   const saldos = ordem.map(d => Number(d.saldo))
-  const orcamento = ordem.reduce((a, d) => a + Number(d.parcela), 0) + Math.max(extraMensal, 0)
+  // SAC: o mínimo do mês é juros + amortização fixa (saldo ÷ prazo), e cai com o tempo. Seguros ficam de fora.
+  const amortSac = ordem.map(d => (d.amortizacao === 'sac' && d.prazo_meses ? Number(d.saldo) / d.prazo_meses : null))
+  // As de parcela fixa formam um orçamento fixo: quando uma acaba, a parcela dela vai para a próxima da fila
+  const orcamentoFixo = ordem.reduce((a, d, i) => a + (amortSac[i] === null ? Number(d.parcela) : 0), 0) + Math.max(extraMensal, 0)
   let jurosTotal = 0
 
   for (let mes = 1; mes <= LIMITE_MESES; mes++) {
-    ordem.forEach((d, i) => {
-      if (saldos[i] > 0) {
-        const juros = saldos[i] * (Number(d.juros_mensal) / 100)
-        saldos[i] += juros
-        jurosTotal += juros
-      }
+    const minimo = ordem.map((d, i) => {
+      if (saldos[i] <= 0) return 0
+      const juros = saldos[i] * (Number(d.juros_mensal) / 100)
+      saldos[i] += juros
+      jurosTotal += juros
+      return amortSac[i] === null ? Number(d.parcela) : juros + amortSac[i]!
     })
 
-    let disponivel = orcamento
-    ordem.forEach((d, i) => {
-      const pago = Math.min(saldos[i], Number(d.parcela), disponivel)
+    let disponivel = orcamentoFixo + ordem.reduce((a, _, i) => a + (amortSac[i] === null ? 0 : minimo[i]), 0)
+    ordem.forEach((_, i) => {
+      const pago = Math.min(saldos[i], minimo[i], disponivel)
       saldos[i] -= pago
       disponivel -= pago
     })
