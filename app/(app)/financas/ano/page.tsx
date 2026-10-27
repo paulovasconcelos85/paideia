@@ -3,7 +3,8 @@ import { obterFamilia } from '@/lib/familia'
 import type { Aporte, Cartao, Despesa, DizimoDevolvido, FaturaPaga, Lancamento, Plano, Receita, Renda } from '@/lib/financas'
 import AnoClient from './ano-client'
 
-export default async function AnoPage({ searchParams }: { searchParams: { ano?: string } }) {
+export default async function AnoPage(props: { searchParams: Promise<{ ano?: string }> }) {
+  const searchParams = await props.searchParams
   const supabase = await createClient()
   const [user, familiaId] = await Promise.all([getUser(), obterFamilia(supabase)])
 

@@ -6,7 +6,8 @@ import {
 } from '@/lib/financas'
 import MesClient from './mes-client'
 
-export default async function MesPage({ searchParams }: { searchParams: { mes?: string; cartao?: string } }) {
+export default async function MesPage(props: { searchParams: Promise<{ mes?: string; cartao?: string }> }) {
+  const searchParams = await props.searchParams
   const supabase = await createClient()
   const [user, familiaId] = await Promise.all([getUser(), obterFamilia(supabase)])
 

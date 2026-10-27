@@ -6,7 +6,8 @@ import { comAportado, type Aporte, type Plano } from '@/lib/financas'
 import { sobraDoMes } from '@/lib/sobra'
 import PlanoDetalhe from './plano-detalhe'
 
-export default async function PlanoPage({ params }: { params: { id: string } }) {
+export default async function PlanoPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   const supabase = await createClient()
   const familiaId = await obterFamilia(supabase)
 
