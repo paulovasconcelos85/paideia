@@ -1,6 +1,6 @@
 import {
   diaNoMes, dizimoDoMes, faturaPagaNoMes, ocorreNoMes, rendaDoMes, rotuloParcela, somarMeses, vencimentoFatura,
-  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Renda,
+  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Receita, type Renda,
 } from './financas'
 
 /**
@@ -39,6 +39,7 @@ interface Entrada {
   faturasPagas: FaturaPaga[]
   faturaAnterior: Lancamento[] // linhas de cartão do mês anterior (faturas que vencem neste mês)
   rendas: Renda[]
+  receitas?: Receita[] // o que entrou de fato (manda sobre a previsão)
   dizimos: DizimoDevolvido[]
   dizimoDesde: string | null
   verAtrasos: boolean // mês atual: traz o que ficou em aberto antes
@@ -101,7 +102,7 @@ function montarFaturas({ mes, lancamentos, cartoes, despesas, faturasPagas, fatu
 }
 
 /** Dízimo do mês e, no mês atual, os meses anteriores ainda não devolvidos. */
-function montarDizimos({ mes, rendas, dizimos, dizimoDesde, verAtrasos }: Entrada): Conta[] {
+function montarDizimos({ mes, rendas, receitas = [], dizimos, dizimoDesde, verAtrasos }: Entrada): Conta[] {
   if (!dizimoDesde || mes < dizimoDesde.slice(0, 10)) return []
   const devolvidos = new Map(dizimos.map(d => [d.competencia.slice(0, 10), d]))
   const meses: string[] = []
@@ -109,13 +110,13 @@ function montarDizimos({ mes, rendas, dizimos, dizimoDesde, verAtrasos }: Entrad
 
   return meses.flatMap((c): Conta[] => {
     const dizimo = devolvidos.get(c)
-    const devido = dizimoDoMes(rendas, c)
+    const devido = dizimoDoMes(rendas, c, receitas)
     if (c < mes && dizimo) return []
     if (!dizimo && devido <= 0) return []
     return [{
       chave: `z-${c}`, tipo: 'dizimo', descricao: 'Dízimo', valor: dizimo ? Number(dizimo.valor) : devido,
       vencimento: dizimo?.devolvido_em ?? null, pago: !!dizimo, atrasada: c < mes,
-      competenciaDizimo: c, renda: rendaDoMes(rendas, c), dizimo,
+      competenciaDizimo: c, renda: rendaDoMes(rendas, c, receitas), dizimo,
     }]
   })
 }

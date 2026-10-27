@@ -1,6 +1,6 @@
 import { createClient, getUser } from '@/lib/supabase/server'
 import { obterFamilia } from '@/lib/familia'
-import type { Cartao, Despesa, DizimoDevolvido, FaturaPaga, Lancamento, Renda } from '@/lib/financas'
+import type { Cartao, Despesa, DizimoDevolvido, FaturaPaga, Lancamento, Receita, Renda } from '@/lib/financas'
 import AnoClient from './ano-client'
 
 export default async function AnoPage({ searchParams }: { searchParams: { ano?: string } }) {
@@ -12,7 +12,7 @@ export default async function AnoPage({ searchParams }: { searchParams: { ano?: 
   const de = `${ano - 1}-12-01`
   const ate = `${ano}-12-01`
 
-  const [{ data: lancamentos }, { data: despesas }, { data: cartoes }, { data: rendas }, { data: faturasPagas }, { data: dizimoConfig }, { data: dizimos }] =
+  const [{ data: lancamentos }, { data: despesas }, { data: cartoes }, { data: rendas }, { data: faturasPagas }, { data: dizimoConfig }, { data: dizimos }, { data: receitas }] =
     await Promise.all([
       supabase.from('fin_lancamentos').select('*').eq('familia_id', familiaId).gte('competencia', de).lte('competencia', ate)
         .order('data', { ascending: false }),
@@ -22,6 +22,7 @@ export default async function AnoPage({ searchParams }: { searchParams: { ano?: 
       supabase.from('fin_faturas').select('cartao_id, competencia').eq('familia_id', familiaId).gte('competencia', de).lte('competencia', ate),
       supabase.from('fin_familias').select('dizimo_desde').eq('id', familiaId).maybeSingle(),
       supabase.from('fin_dizimos').select('competencia, valor, devolvido_em').eq('familia_id', familiaId).lte('competencia', ate),
+      supabase.from('fin_receitas').select('*').eq('familia_id', familiaId).gte('competencia', de).lte('competencia', ate),
     ])
 
   return (
@@ -34,6 +35,7 @@ export default async function AnoPage({ searchParams }: { searchParams: { ano?: 
       despesas={(despesas ?? []) as Despesa[]}
       cartoes={(cartoes ?? []) as Cartao[]}
       rendas={(rendas ?? []) as Renda[]}
+      receitas={(receitas ?? []) as Receita[]}
       faturasPagas={(faturasPagas ?? []) as FaturaPaga[]}
       dizimoDesde={(dizimoConfig?.dizimo_desde as string | undefined) ?? null}
       dizimos={(dizimos ?? []) as DizimoDevolvido[]}

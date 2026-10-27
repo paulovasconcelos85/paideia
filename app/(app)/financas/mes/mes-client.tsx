@@ -7,7 +7,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, FileUp, Plus, SlidersHorizontal
 import { createClient } from '@/lib/supabase/client'
 import {
   CATEGORIAS_DESPESA, espelharLancamento, formatBRL, hojeISO, lancamentoEssencial, nomeMes, rendaDoMes,
-  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Renda,
+  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Receita, type Renda,
 } from '@/lib/financas'
 import { montarContas, type Conta } from '@/lib/contas'
 import LancamentoSheet from '../_components/lancamento-sheet'
@@ -15,6 +15,8 @@ import ContasLista from './contas-lista'
 import ContaSheet from './conta-sheet'
 import NovaContaSheet from './nova-conta-sheet'
 import DizimoSheet from './dizimo-sheet'
+import Entradas, { montarEntradas, type Entrada } from './entradas'
+import ReceitaSheet from './receita-sheet'
 import ImportarFatura from './importar-fatura'
 import TetosSheet from './tetos-sheet'
 
@@ -33,6 +35,7 @@ interface Props {
   faturaAnterior: Lancamento[]
   atrasados: Lancamento[]
   rendas: Renda[]
+  receitas: Receita[] // entradas que pagam este mês
   dizimoDesde: string | null
   dizimos: DizimoDevolvido[]
   verAtrasos: boolean
@@ -47,7 +50,7 @@ function mesVizinho(competencia: string, delta: number) {
 export default function MesClient({
   familiaId, userId, competencia, tetos: tetosIniciais, lancamentos: iniciais, cartoes, despesas, plano, renda, cartaoInicial,
   faturasPagas: faturasIniciais, faturaAnterior: anteriorInicial, atrasados: atrasadosIniciais,
-  rendas, dizimoDesde, dizimos: dizimosIniciais, verAtrasos,
+  rendas, receitas: receitasIniciais, dizimoDesde, dizimos: dizimosIniciais, verAtrasos,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -64,6 +67,9 @@ export default function MesClient({
   const [dizimos, setDizimos] = useState(dizimosIniciais)
   useEffect(() => { setDizimos(dizimosIniciais) }, [dizimosIniciais])
   const [tetos, setTetos] = useState(tetosIniciais)
+  const [receitas, setReceitas] = useState(receitasIniciais)
+  useEffect(() => { setReceitas(receitasIniciais) }, [receitasIniciais])
+  const [receitaAberta, setReceitaAberta] = useState<{ entrada: Entrada | null } | null>(null)
 
   const lancamentos = useMemo(() => brutos.map(l => espelharLancamento(l, despesas)), [brutos, despesas])
   const atrasados = useMemo(() => atrasadosBrutos.map(l => espelharLancamento(l, despesas)), [atrasadosBrutos, despesas])
@@ -81,8 +87,10 @@ export default function MesClient({
   const hoje = hojeISO()
   const contas = montarContas({
     mes: competencia, lancamentos, atrasados, cartoes, despesas, faturasPagas, faturaAnterior,
-    rendas, dizimos, dizimoDesde, verAtrasos,
+    rendas, receitas, dizimos, dizimoDesde, verAtrasos,
   })
+  const entradas = montarEntradas(rendas, receitas, competencia)
+  const rendaRecebida = receitas.some(r => r.competencia.slice(0, 10) === competencia && r.tipo !== 'saldo')
   const pausadas = despesas.filter(d => !d.ativo && !d.cartao_id && d.inicio)
 
   // Os números do mês
@@ -91,7 +99,7 @@ export default function MesClient({
   const pago = soma(contas.filter(c => c.pago))
   const vencido = soma(contas.filter(c => !c.pago && c.vencimento && c.vencimento < hoje))
   const aPagar = total - pago
-  const rendaMes = rendaDoMes(rendas, competencia)
+  const rendaMes = rendaDoMes(rendas, competencia, receitas)
   const sobra = rendaMes - total
 
   // ── Ações da planilha
@@ -156,6 +164,35 @@ export default function MesClient({
     trocarLancamento({ ...l, valor })
     const { error } = await supabase.from('fin_lancamentos').update({ valor }).eq('id', l.id)
     if (error) { trocarLancamento(l); alert('Não foi possível salvar o valor. Tente de novo.') }
+  }
+
+  // ── Entradas: o salário previsto vira registro quando cai
+
+  const trocarReceita = (r: Receita) => setReceitas(prev => (prev.some(x => x.id === r.id) ? prev.map(x => (x.id === r.id ? r : x)) : [...prev, r]))
+
+  async function registrarEntrada(e: Entrada, valor: number) {
+    const { data, error } = await supabase.from('fin_receitas').insert({
+      familia_id: familiaId, user_id: userId, data: e.data ?? hoje, competencia, tipo: e.tipo, valor,
+      descricao: e.renda?.descricao ?? null,
+    }).select().single()
+    if (error || !data) return alert('Não foi possível salvar. Tente de novo.')
+    trocarReceita(data as Receita)
+  }
+
+  async function alternarEntrada(e: Entrada) {
+    if (!e.receita) return ocupar(e.chave, () => registrarEntrada(e, e.valor))
+    const r = e.receita
+    setReceitas(prev => prev.filter(x => x.id !== r.id)) // volta a ser prevista
+    const { error } = await supabase.from('fin_receitas').delete().eq('id', r.id)
+    if (error) { trocarReceita(r); alert('Não foi possível desfazer. Tente de novo.') }
+  }
+
+  async function valorEntrada(e: Entrada, valor: number) {
+    if (!e.receita) return ocupar(e.chave, () => registrarEntrada(e, valor))
+    const r = e.receita
+    trocarReceita({ ...r, valor })
+    const { error } = await supabase.from('fin_receitas').update({ valor }).eq('id', r.id)
+    if (error) { trocarReceita(r); alert('Não foi possível salvar o valor. Tente de novo.') }
   }
 
   function aoDevolver(comp: string, d: DizimoDevolvido | null) {
@@ -226,7 +263,7 @@ export default function MesClient({
             <div className="text-right">
               <p className="text-xs text-muted-foreground">{sobra >= 0 ? 'Sobra da renda' : 'Falta na renda'}</p>
               <p className={`text-lg font-semibold tabular-nums ${sobra >= 0 ? 'text-green-700' : 'text-red-600'}`}>{formatBRL(Math.abs(sobra))}</p>
-              <p className="text-[11px] text-muted-foreground">renda {formatBRL(rendaMes)}</p>
+              <p className="text-[11px] text-muted-foreground">renda {rendaRecebida ? 'recebida' : 'prevista'} {formatBRL(rendaMes)}</p>
             </div>
           )}
         </div>
@@ -248,6 +285,16 @@ export default function MesClient({
           </div>
         </div>
       </div>
+
+      {/* O que entra para pagar o mês */}
+      <Entradas
+        entradas={entradas}
+        ocupadas={ocupadas}
+        onAlternar={alternarEntrada}
+        onValor={valorEntrada}
+        onAbrir={e => setReceitaAberta({ entrada: e })}
+        onNova={() => setReceitaAberta({ entrada: null })}
+      />
 
       {/* A planilha */}
       <ContasLista
@@ -393,6 +440,21 @@ export default function MesClient({
           }}
           onCadastroAlterado={refresh}
           onClose={() => setContaAberta(null)}
+        />
+      )}
+      {receitaAberta && (
+        <ReceitaSheet
+          familiaId={familiaId}
+          userId={userId}
+          receita={receitaAberta.entrada?.receita ?? null}
+          inicial={receitaAberta.entrada && !receitaAberta.entrada.receita ? receitaAberta.entrada : undefined}
+          onSaved={r => {
+            setReceitaAberta(null)
+            if (r.competencia.slice(0, 10) === competencia) trocarReceita(r)
+            else setReceitas(prev => prev.filter(x => x.id !== r.id)) // passou a pagar outro mês
+          }}
+          onDeleted={id => { setReceitas(prev => prev.filter(x => x.id !== id)); setReceitaAberta(null) }}
+          onClose={() => setReceitaAberta(null)}
         />
       )}
       {dizimoAberto && (

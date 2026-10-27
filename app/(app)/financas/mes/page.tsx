@@ -2,7 +2,7 @@ import { createClient, getUser } from '@/lib/supabase/server'
 import { obterFamilia } from '@/lib/familia'
 import {
   competenciaISO, planoPrincipal, rendaMensal, somarMeses,
-  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Renda,
+  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Plano, type Receita, type Renda,
 } from '@/lib/financas'
 import MesClient from './mes-client'
 
@@ -17,7 +17,7 @@ export default async function MesPage({ searchParams }: { searchParams: { mes?: 
 
   const [
     { data: familia }, { data: lancamentos }, { data: cartoes }, { data: despesas }, { data: rendas }, { data: planos },
-    { data: faturasPagas }, { data: faturaAnterior }, { data: atrasados }, { data: dizimoConfig }, { data: dizimos },
+    { data: faturasPagas }, { data: faturaAnterior }, { data: atrasados }, { data: dizimoConfig }, { data: dizimos }, { data: receitas },
   ] =
     await Promise.all([
       supabase.from('fin_familias').select('tetos').eq('id', familiaId).single(),
@@ -38,6 +38,8 @@ export default async function MesPage({ searchParams }: { searchParams: { mes?: 
       // Dízimo: desde quando é acompanhado e o que já foi devolvido (consulta à parte: sem a migração, só some)
       supabase.from('fin_familias').select('dizimo_desde').eq('id', familiaId).maybeSingle(),
       supabase.from('fin_dizimos').select('competencia, valor, devolvido_em').eq('familia_id', familiaId).lte('competencia', competencia),
+      // Entradas: só as que pagam este mês, mais as de meses anteriores ao dízimo em aberto (para o cálculo dele)
+      supabase.from('fin_receitas').select('*').eq('familia_id', familiaId).lte('competencia', competencia).gte('competencia', somarMeses(competencia, -12)),
     ])
 
   return (
@@ -57,6 +59,7 @@ export default async function MesPage({ searchParams }: { searchParams: { mes?: 
       faturaAnterior={(faturaAnterior ?? []) as Lancamento[]}
       atrasados={(atrasados ?? []) as Lancamento[]}
       rendas={(rendas ?? []) as Renda[]}
+      receitas={(receitas ?? []) as Receita[]}
       dizimoDesde={(dizimoConfig?.dizimo_desde as string | undefined) ?? null}
       dizimos={(dizimos ?? []) as DizimoDevolvido[]}
       verAtrasos={ehMesAtual}

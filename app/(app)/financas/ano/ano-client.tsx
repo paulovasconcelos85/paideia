@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   espelharLancamento, formatBRL, hojeISO, rendaDoMes, somarMeses,
-  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Renda,
+  type Cartao, type Despesa, type DizimoDevolvido, type FaturaPaga, type Lancamento, type Receita, type Renda,
 } from '@/lib/financas'
 import { montarContas, type Conta } from '@/lib/contas'
 
@@ -19,6 +19,7 @@ interface Props {
   despesas: Despesa[]
   cartoes: Cartao[]
   rendas: Renda[]
+  receitas: Receita[]
   faturasPagas: FaturaPaga[]
   dizimoDesde: string | null
   dizimos: DizimoDevolvido[]
@@ -41,7 +42,7 @@ function colunaDe(c: Conta): string {
 }
 
 /** O ano numa grade, como a planilha: um mês por linha, uma conta por coluna, vermelho a pagar e verde pago. */
-export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos, despesas, cartoes, rendas, faturasPagas, dizimoDesde, dizimos }: Props) {
+export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos, despesas, cartoes, rendas, receitas, faturasPagas, dizimoDesde, dizimos }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const [, startTransition] = useTransition()
@@ -66,6 +67,7 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
         faturasPagas,
         faturaAnterior: lancamentos.filter(l => l.competencia === anterior && l.cartao_id),
         rendas,
+        receitas,
         dizimos,
         dizimoDesde,
         verAtrasos: false,
@@ -79,7 +81,8 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
         cel.pago &&= c.pago
         cel.vencida ||= !c.pago && !!c.vencimento && c.vencimento < hoje
       }
-      return { mes, celulas, total: contas.reduce((a, c) => a + c.valor, 0), renda: rendaDoMes(rendas, mes) }
+      const recebida = receitas.some(r => r.competencia.slice(0, 10) === mes && r.tipo !== 'saldo')
+      return { mes, celulas, total: contas.reduce((a, c) => a + c.valor, 0), renda: rendaDoMes(rendas, mes, receitas), recebida }
     })
 
     // Colunas na ordem da planilha: dízimo, contas fixas pelo dia de vencimento, cartões, avulsas
@@ -97,7 +100,7 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
     for (const d of fixas) rotulos[`d-${d.id}`] = d.descricao
     for (const c of cartoes) rotulos[`f-${c.id}`] = c.nome
     return { meses, colunas, rotulos }
-  }, [ano, brutos, despesas, cartoes, rendas, faturasPagas, dizimos, dizimoDesde, hoje])
+  }, [ano, brutos, despesas, cartoes, rendas, receitas, faturasPagas, dizimos, dizimoDesde, hoje])
 
   const pagoDe = (mes: string, col: string, cel: Celula) => marcadas[`${mes}|${col}`] ?? cel.pago
 
@@ -174,6 +177,7 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
             <thead className="sticky top-0 z-20">
               <tr className="bg-secondary">
                 <th className={`${fixa} z-30 border-b border-r border-border bg-secondary px-3 py-2 text-left font-medium`}>Mês</th>
+                <th className="border-b border-r border-border px-3 py-2 text-right font-medium text-blue-700">Renda</th>
                 <th className="border-b border-r border-border px-3 py-2 text-right font-medium">Total</th>
                 <th className="border-b border-r border-border px-3 py-2 text-right font-medium">Sobra</th>
                 {colunas.map(col => (
@@ -194,10 +198,13 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
                         {MES_CURTO[Number(m.mes.slice(5, 7)) - 1]}./{ano}
                       </Link>
                     </td>
+                    <td className={`border-b border-r border-border px-3 py-2 text-right ${m.recebida ? 'text-blue-700' : 'text-blue-400'}`}>
+                      {m.renda > 0 && (m.recebida || m.mes >= mesAtual) ? formatBRL(m.renda) : ''}
+                    </td>
                     <td className="border-b border-r border-border px-3 py-2 text-right font-semibold">{m.total ? formatBRL(m.total) : ''}</td>
                     <td className={`border-b border-r border-border px-3 py-2 text-right ${sobra >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                      {/* Só do mês atual em diante: a renda cadastrada é a de hoje */}
-                      {m.renda > 0 && m.total > 0 && m.mes >= mesAtual ? formatBRL(sobra) : ''}
+                      {/* Com entrada registrada, a sobra é real; sem ela, só vale como previsão do mês atual em diante */}
+                      {m.renda > 0 && m.total > 0 && (m.recebida || m.mes >= mesAtual) ? formatBRL(sobra) : ''}
                     </td>
                     {colunas.map(col => {
                       const cel = m.celulas[col]
@@ -223,6 +230,9 @@ export default function AnoClient({ ano, familiaId, userId, lancamentos: brutos,
             <tfoot className="sticky bottom-0">
               <tr className="bg-secondary font-semibold">
                 <td className={`${fixa} border-r border-border bg-secondary px-3 py-2`}>Ano</td>
+                <td className="border-r border-border px-3 py-2 text-right text-blue-700">
+                  {formatBRL(meses.reduce((a, m) => a + (m.recebida || m.mes >= mesAtual ? m.renda : 0), 0))}
+                </td>
                 <td className="border-r border-border px-3 py-2 text-right">{formatBRL(totalAno)}</td>
                 <td className="border-r border-border" />
                 {colunas.map(col => (

@@ -41,9 +41,34 @@ export interface Renda {
   valor: number
   frequencia: FrequenciaRenda
   mes_recebimento: number | null
+  dia_recebimento?: number | null // dia em que cai (salário: 26)
   ativo: boolean
   observacoes: string | null
   created_at: string
+}
+
+export type TipoReceita = 'salario' | 'decimo_terceiro' | 'abono' | 'ferias' | 'saldo' | 'extra'
+
+/** O que de fato caiu na conta. A competência é o mês que a entrada paga. */
+export interface Receita {
+  id: string
+  familia_id: string
+  user_id: string
+  data: string
+  competencia: string
+  tipo: TipoReceita
+  descricao: string | null
+  valor: number
+  created_at: string
+}
+
+export const TIPOS_RECEITA: Record<TipoReceita, string> = {
+  salario: 'Salário',
+  decimo_terceiro: '13º salário',
+  abono: 'Abono',
+  ferias: 'Férias vendidas',
+  extra: 'Outra entrada',
+  saldo: 'Saldo na conta',
 }
 
 export const CATEGORIAS_DESPESA: Record<string, { label: string; className: string; descricao: string }> = {
@@ -461,16 +486,40 @@ export interface DizimoDevolvido {
   devolvido_em: string
 }
 
-/** Renda que entra num mês: as mensais e as anuais (13º, férias) no mês em que caem. Eventuais ficam de fora. */
-export function rendaDoMes(rendas: Pick<Renda, 'valor' | 'frequencia' | 'ativo' | 'mes_recebimento'>[], competencia: string): number {
-  const mes = Number(competencia.slice(5, 7))
-  return rendas
-    .filter(r => r.ativo && (r.frequencia === 'mensal' || (r.frequencia === 'anual' && r.mes_recebimento === mes)))
-    .reduce((a, r) => a + Number(r.valor), 0)
+// Dinheiro que cai na segunda quinzena paga as contas do mês seguinte (o salário do dia 26 banca o mês que vem)
+const DIA_VIRADA = 15
+
+/** Mês que uma entrada paga, pela data em que caiu. */
+export function competenciaDaReceita(dataISO: string): string {
+  const mes = `${dataISO.slice(0, 7)}-01`
+  return Number(dataISO.slice(8, 10)) >= DIA_VIRADA ? somarMeses(mes, 1) : mes
 }
 
-export function dizimoDoMes(rendas: Pick<Renda, 'valor' | 'frequencia' | 'ativo' | 'mes_recebimento'>[], competencia: string): number {
-  return Math.round(rendaDoMes(rendas, competencia) * DIZIMO * 100) / 100
+/** Rendas previstas para pagar um mês, com a data em que devem cair. Eventuais ficam de fora. */
+export function rendasPrevistas(rendas: Renda[], competencia: string): { renda: Renda; data: string | null }[] {
+  return rendas.flatMap(r => {
+    if (!r.ativo) return []
+    const dia = r.dia_recebimento ?? null
+    // Cai no mês anterior se for depois da virada; sem dia definido, no próprio mês
+    const mesQueCai = dia && dia >= DIA_VIRADA ? somarMeses(competencia, -1) : competencia
+    const data = dia ? diaNoMes(mesQueCai, dia) : null
+    if (r.frequencia === 'mensal') return [{ renda: r, data }]
+    if (r.frequencia === 'anual' && r.mes_recebimento === Number(mesQueCai.slice(5, 7))) return [{ renda: r, data }]
+    return []
+  })
+}
+
+const conta = (r: Pick<Receita, 'tipo'>) => r.tipo !== 'saldo'
+
+/** Renda de um mês: o que entrou de fato, se já houver registro; senão, a previsão. O saldo na conta não conta. */
+export function rendaDoMes(rendas: Renda[], competencia: string, receitas: Receita[] = []): number {
+  const doMes = receitas.filter(r => r.competencia.slice(0, 10) === competencia && conta(r))
+  if (doMes.length > 0) return doMes.reduce((a, r) => a + Number(r.valor), 0)
+  return rendasPrevistas(rendas, competencia).reduce((a, p) => a + Number(p.renda.valor), 0)
+}
+
+export function dizimoDoMes(rendas: Renda[], competencia: string, receitas: Receita[] = []): number {
+  return Math.round(rendaDoMes(rendas, competencia, receitas) * DIZIMO * 100) / 100
 }
 
 /** A conta fixa cai neste mês? Respeita início, pausa e o fim das parcelas. Anuais ficam de fora (entram quando lançadas). */
