@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { AlertTriangle, CheckCircle2, CircleAlert, Lightbulb, MapPin, TrendingDown, TrendingUp } from 'lucide-react'
-import { formatBRL, formatMesAno, nomeMes } from '@/lib/financas'
+import { formatBRL, formatBRLCurto, formatMesAno, nomeMes } from '@/lib/financas'
 import { capaDoDia } from '@/lib/imagens'
 import type { Retrato } from '@/lib/retrato'
 
@@ -244,15 +244,15 @@ export function OQueTenho({ r }: { r: Retrato }) {
       <div className="grid grid-cols-3 gap-3">
         <div>
           <p className="text-xs text-muted-foreground">Tenho</p>
-          <p className="text-xl font-semibold tabular-nums text-green-700 sm:text-2xl">{formatBRL(p.ativos)}</p>
+          <p className="text-xl font-semibold tabular-nums text-green-700 sm:text-2xl" title={formatBRL(p.ativos)}>{formatBRLCurto(p.ativos)}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Devo</p>
-          <p className="text-xl font-semibold tabular-nums text-red-600 sm:text-2xl">{formatBRL(p.passivos)}</p>
+          <p className="text-xl font-semibold tabular-nums text-red-600 sm:text-2xl" title={formatBRL(p.passivos)}>{formatBRLCurto(p.passivos)}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Patrimônio líquido</p>
-          <p className={`text-xl font-semibold tabular-nums sm:text-2xl ${p.liquido >= 0 ? 'text-green-700' : 'text-red-600'}`}>{formatBRL(p.liquido)}</p>
+          <p className={`text-xl font-semibold tabular-nums sm:text-2xl ${p.liquido >= 0 ? 'text-green-700' : 'text-red-600'}`} title={formatBRL(p.liquido)}>{formatBRLCurto(p.liquido)}</p>
         </div>
       </div>
       {p.tenho.length > 0 && (

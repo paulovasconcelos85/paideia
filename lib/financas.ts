@@ -126,6 +126,16 @@ export function formatBRL(valor: number): string {
   return brl.format(valor)
 }
 
+/** Valor abreviado para espaços apertados: "R$ 117k", "R$ 12,5k", "R$ 1,7 mi". */
+export function formatBRLCurto(valor: number): string {
+  const abs = Math.abs(valor)
+  const sinal = valor < 0 ? '-' : ''
+  const num = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: n >= 100 ? 0 : 1 })
+  if (abs >= 1_000_000) return `${sinal}R$ ${num(abs / 1_000_000)} mi`
+  if (abs >= 1_000) return `${sinal}R$ ${num(abs / 1_000)}k`
+  return `${sinal}R$ ${Math.round(abs).toLocaleString('pt-BR')}`
+}
+
 /** Aceita "1.234,56", "1234,56", "1234.56" ou "R$ 1.234". Retorna null se inválido. */
 export function parseBRL(texto: string): number | null {
   let s = texto.replace(/[R$\s]/g, '')
